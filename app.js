@@ -262,8 +262,10 @@ async function extractFromUrl(url) {
 // Parse an Instagram caption into recipe sections
 function parseInstagramCaption(caption) {
   const lines = caption.split('\n').map(l => l.trim()).filter(Boolean);
-  const ingredientKeywords = /^(ingredients?|what you('ll| will) need):?$/i;
-  const stepKeywords = /^(instructions?|steps?|method|directions?|how to (make|prepare|cook)):?$/i;
+
+  const ingredientKeywords = /^(ingredients?|what you('ll| will) need|serves?\s*\d*|makes?\s*\d*|for\s+\d+\s+\w+):?$/i;
+  const stepKeywords = /^(instructions?|steps?|method|directions?|how to (make|prepare|cook)|preparation|to make|to cook):?$/i;
+  const hashtagLine = s => s.split(' ').every(w => w.startsWith('#') || w === '');
 
   let title = '';
   let ingredients = [];
@@ -272,18 +274,26 @@ function parseInstagramCaption(caption) {
   let section = 'header';
 
   for (const line of lines) {
+    // Skip hashtag-only lines
+    if (hashtagLine(line)) continue;
+
     if (ingredientKeywords.test(line)) { section = 'ingredients'; continue; }
     if (stepKeywords.test(line)) { section = 'steps'; continue; }
 
     if (section === 'header') {
-      if (!title) title = line; // first line is the title
+      if (!title) title = line;
       else notesLines.push(line);
     } else if (section === 'ingredients') {
-      ingredients.push(line.replace(/^[-•*✓]\s*/, ''));
+      // Subsection header within ingredients (e.g. "Almond filling:")
+      if (/^[A-Za-z][\w\s]+:$/.test(line)) {
+        ingredients.push(`— ${line.replace(/:$/, '')} —`);
+      } else {
+        ingredients.push(line.replace(/^[-•*✓]\s*/, ''));
+      }
     } else if (section === 'steps') {
+      // Skip closing words and hashtags after steps
+      if (/^(enjoy|bon appétit|buon appetito|bom apetite|share|follow|tag|save|like|comment)/i.test(line)) continue;
       steps.push(line.replace(/^\d+[.)]\s*/, ''));
-    } else {
-      notesLines.push(line);
     }
   }
 
@@ -313,18 +323,34 @@ function showCaptionPasteUI(url) {
 
   document.getElementById('extractMessage').after(box);
 
-  document.getElementById('parseCaptionBtn').addEventListener('click', () => {
+  document.getElementById('parseCaptionBtn').addEventListener('click', async () => {
     const caption = document.getElementById('captionInput').value.trim();
     if (!caption) return;
-    const parsed = parseInstagramCaption(caption);
-    document.getElementById('f-title').value = parsed.title;
-    document.getElementById('f-ingredients').value = parsed.ingredients.join('\n');
-    document.getElementById('f-steps').value = parsed.steps.join('\n');
-    document.getElementById('f-notes').value = parsed.notes;
-    document.getElementById('f-sourceUrl').value = url;
-    document.getElementById('f-sourceType').value = 'instagram';
-    box.remove();
-    setExtractMsg('Caption parsed! Review and adjust the fields below before saving.', 'success');
+
+    const parseBtn = document.getElementById('parseCaptionBtn');
+    parseBtn.disabled = true;
+    parseBtn.innerHTML = '<span class="spinner"></span>AI parsing...';
+
+    try {
+      const res = await fetch(`${WORKER_URL}?action=parse-caption&caption=${encodeURIComponent(caption)}`);
+      if (!res.ok) throw new Error('AI failed');
+      const recipe = await res.json();
+
+      document.getElementById('f-title').value = recipe.title || '';
+      document.getElementById('f-servings').value = recipe.servings || '';
+      document.getElementById('f-time').value = recipe.readyInMinutes || '';
+      document.getElementById('f-ingredients').value = (recipe.ingredients || []).join('\n');
+      document.getElementById('f-steps').value = (recipe.steps || []).join('\n');
+      document.getElementById('f-notes').value = recipe.notes || '';
+      document.getElementById('f-sourceUrl').value = url;
+      document.getElementById('f-sourceType').value = 'instagram';
+      box.remove();
+      setExtractMsg('AI extracted the recipe! Review and adjust before saving.', 'success');
+    } catch {
+      parseBtn.disabled = false;
+      parseBtn.textContent = 'Parse Caption';
+      setExtractMsg('AI parsing failed. Try again.', 'error');
+    }
   });
 }
 
