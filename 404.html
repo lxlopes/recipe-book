@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Our Recipe Book</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- VIEW: Login -->
+  <div id="view-login" class="view">
+    <div class="login-card">
+      <div class="login-logo">🍴</div>
+      <h1>Our Recipe Book</h1>
+      <form id="loginForm">
+        <input type="email" id="emailInput" placeholder="Email" required autocomplete="email">
+        <input type="password" id="passwordInput" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" class="btn-primary">Sign In</button>
+        <p id="loginError" class="error-msg"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- VIEW: Recipe List -->
+  <div id="view-list" class="view hidden">
+    <header class="app-header">
+      <h1>Our Recipe Book</h1>
+      <button id="signOutBtn" class="btn-ghost">Sign Out</button>
+    </header>
+    <div class="list-content">
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="Search by name or tag...">
+      </div>
+      <div id="recipeGrid" class="recipe-grid"></div>
+      <div id="emptyState" class="empty-state hidden">
+        <p>No recipes yet.<br>Add your first one!</p>
+      </div>
+    </div>
+    <button id="addRecipeBtn" class="fab">+ Add Recipe</button>
+  </div>
+
+  <!-- VIEW: Add / Edit Recipe -->
+  <div id="view-add" class="view hidden">
+    <header class="app-header">
+      <button id="backFromAddBtn" class="btn-ghost">← Back</button>
+      <h2 id="addViewTitle">Add Recipe</h2>
+      <div></div>
+    </header>
+    <div class="add-content">
+      <div class="url-section">
+        <div class="url-input-row">
+          <input type="url" id="urlInput" placeholder="Paste recipe URL or Instagram link...">
+          <button id="extractBtn" class="btn-primary">Extract</button>
+        </div>
+        <p id="extractMessage" class="extract-msg"></p>
+      </div>
+      <form id="recipeForm">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="f-title" placeholder="Recipe name" required>
+        </div>
+        <div class="form-group">
+          <label>Image URL</label>
+          <input type="url" id="f-image" placeholder="https://...">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Servings</label>
+            <input type="number" id="f-servings" placeholder="4" min="1">
+          </div>
+          <div class="form-group">
+            <label>Time (minutes)</label>
+            <input type="number" id="f-time" placeholder="30" min="1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Ingredients * <span class="hint">(one per line)</span></label>
+          <textarea id="f-ingredients" rows="8" placeholder="200g spaghetti&#10;2 eggs&#10;100g guanciale" required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Steps * <span class="hint">(one per line)</span></label>
+          <textarea id="f-steps" rows="10" placeholder="Boil pasta in salted water.&#10;Fry guanciale until crispy.&#10;Mix eggs and cheese." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="f-notes" rows="3" placeholder="Tips, variations, where you found it..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Tags <span class="hint">(comma separated)</span></label>
+          <input type="text" id="f-tags" placeholder="pasta, italian, quick">
+        </div>
+        <input type="hidden" id="f-sourceUrl">
+        <input type="hidden" id="f-sourceType" value="website">
+        <button type="submit" id="saveBtn" class="btn-primary full-width">Save Recipe</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- VIEW: Recipe Detail -->
+  <div id="view-detail" class="view hidden">
+    <header class="app-header">
+      <button id="backFromDetailBtn" class="btn-ghost">← Back</button>
+      <div class="detail-actions">
+        <button id="editBtn" class="btn-ghost">Edit</button>
+        <button id="deleteBtn" class="btn-danger">Delete</button>
+      </div>
+    </header>
+    <div class="detail-content">
+      <img id="d-image" src="" alt="" class="detail-image">
+      <div class="detail-body">
+        <div id="d-source-badge" class="source-badge"></div>
+        <h2 id="d-title"></h2>
+        <div id="d-meta" class="detail-meta"></div>
+        <div id="d-tags" class="tags-row"></div>
+        <section>
+          <h3>Ingredients</h3>
+          <ul id="d-ingredients"></ul>
+        </section>
+        <section>
+          <h3>Steps</h3>
+          <ol id="d-steps"></ol>
+        </section>
+        <section id="d-notes-section" class="hidden">
+          <h3>Notes</h3>
+          <p id="d-notes"></p>
+        </section>
+        <a id="d-source-link" href="#" target="_blank" rel="noopener" class="source-link hidden"></a>
+        <p id="d-added-by" class="added-by"></p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
