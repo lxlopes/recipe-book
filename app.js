@@ -183,6 +183,7 @@ function resetForm() {
   document.getElementById('f-sourceUrl').value = '';
   document.getElementById('f-sourceType').value = 'website';
   setExtractMsg('', '');
+  document.getElementById('captionPasteBox')?.remove();
 }
 
 document.getElementById('backFromAddBtn').addEventListener('click', () => showView('list'));
@@ -207,12 +208,13 @@ async function extractFromUrl(url) {
       setExtractMsg('Daily extraction limit reached. Add the recipe manually.', 'error');
       return;
     }
-    if (res.status === 403) {
-      setExtractMsg('This Instagram post is private or inaccessible. Try a public post.', 'error');
-      return;
-    }
     if (!res.ok) {
-      setExtractMsg('Could not extract recipe. Try filling it in manually.', 'error');
+      const isInstagram = url.includes('instagram.com') || url.includes('instagr.am');
+      if (isInstagram) {
+        showCaptionPasteUI(url);
+      } else {
+        setExtractMsg('Could not extract recipe. Try filling it in manually.', 'error');
+      }
       return;
     }
 
@@ -286,6 +288,39 @@ function parseInstagramCaption(caption) {
   }
 
   return { title, ingredients, steps, notes: notesLines.join('\n') };
+}
+
+function showCaptionPasteUI(url) {
+  setExtractMsg('Instagram Reels cannot be auto-extracted. Paste the caption below and click Parse:', 'info');
+
+  // Remove any existing caption box
+  document.getElementById('captionPasteBox')?.remove();
+
+  const box = document.createElement('div');
+  box.id = 'captionPasteBox';
+  box.style.cssText = 'margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem;';
+  box.innerHTML = `
+    <textarea id="captionInput" rows="8"
+      placeholder="Open the Instagram Reel → tap ··· → Copy caption, then paste here..."
+      style="width:100%; padding:0.75rem; border:1.5px solid #e8e0d8; border-radius:12px; font-family:inherit; font-size:0.9rem; resize:vertical;"></textarea>
+    <button id="parseCaptionBtn" class="btn-primary">Parse Caption</button>
+  `;
+
+  document.getElementById('extractMessage').after(box);
+
+  document.getElementById('parseCaptionBtn').addEventListener('click', () => {
+    const caption = document.getElementById('captionInput').value.trim();
+    if (!caption) return;
+    const parsed = parseInstagramCaption(caption);
+    document.getElementById('f-title').value = parsed.title;
+    document.getElementById('f-ingredients').value = parsed.ingredients.join('\n');
+    document.getElementById('f-steps').value = parsed.steps.join('\n');
+    document.getElementById('f-notes').value = parsed.notes;
+    document.getElementById('f-sourceUrl').value = url;
+    document.getElementById('f-sourceType').value = 'instagram';
+    box.remove();
+    setExtractMsg('Caption parsed! Review and adjust the fields below before saving.', 'success');
+  });
 }
 
 function setExtractMsg(text, type) {
