@@ -192,7 +192,12 @@ document.getElementById('backFromAddBtn').addEventListener('click', () => showVi
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const url = document.getElementById('urlInput').value.trim();
   if (!url) return;
-  await extractFromUrl(url);
+  const isInstagram = url.includes('instagram.com') || url.includes('instagr.am');
+  if (isInstagram) {
+    showCaptionPasteUI(url);
+  } else {
+    await extractFromUrl(url);
+  }
 });
 
 async function extractFromUrl(url) {
