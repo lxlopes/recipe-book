@@ -191,16 +191,10 @@ document.getElementById('backFromAddBtn').addEventListener('click', () => showVi
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const url = document.getElementById('urlInput').value.trim();
   if (!url) return;
-  if (url.includes('instagram.com') || url.includes('instagr.am')) {
-    document.getElementById('f-sourceUrl').value = url;
-    document.getElementById('f-sourceType').value = 'instagram';
-    setExtractMsg('Instagram recipes need to be entered manually. The link is saved as a reference.', 'info');
-  } else {
-    await extractFromWebsite(url);
-  }
+  await extractFromUrl(url);
 });
 
-async function extractFromWebsite(url) {
+async function extractFromUrl(url) {
   const btn = document.getElementById('extractBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Extracting...';
@@ -213,23 +207,42 @@ async function extractFromWebsite(url) {
       setExtractMsg('Daily extraction limit reached. Add the recipe manually.', 'error');
       return;
     }
+    if (res.status === 403) {
+      setExtractMsg('This Instagram post is private or inaccessible. Try a public post.', 'error');
+      return;
+    }
     if (!res.ok) {
       setExtractMsg('Could not extract recipe. Try filling it in manually.', 'error');
       return;
     }
 
     const data = await res.json();
-    document.getElementById('f-title').value = data.title || '';
-    document.getElementById('f-image').value = data.image || '';
-    document.getElementById('f-servings').value = data.servings || '';
-    document.getElementById('f-time').value = data.readyInMinutes || '';
-    document.getElementById('f-ingredients').value =
-      (data.extendedIngredients || []).map(i => i.original).join('\n');
-    document.getElementById('f-steps').value =
-      (data.analyzedInstructions?.[0]?.steps || []).map(s => s.step).join('\n');
-    document.getElementById('f-sourceUrl').value = url;
-    document.getElementById('f-sourceType').value = 'website';
-    setExtractMsg('Recipe extracted! Review the details below before saving.', 'success');
+
+    if (data.type === 'instagram') {
+      // Parse caption into recipe sections
+      const parsed = parseInstagramCaption(data.caption || '');
+      document.getElementById('f-title').value = parsed.title;
+      document.getElementById('f-image').value = data.image || '';
+      document.getElementById('f-ingredients').value = parsed.ingredients.join('\n');
+      document.getElementById('f-steps').value = parsed.steps.join('\n');
+      document.getElementById('f-notes').value = parsed.notes;
+      document.getElementById('f-sourceUrl').value = url;
+      document.getElementById('f-sourceType').value = 'instagram';
+      setExtractMsg('Instagram post extracted! Review and adjust the fields below before saving.', 'success');
+    } else {
+      // Regular website via Spoonacular
+      document.getElementById('f-title').value = data.title || '';
+      document.getElementById('f-image').value = data.image || '';
+      document.getElementById('f-servings').value = data.servings || '';
+      document.getElementById('f-time').value = data.readyInMinutes || '';
+      document.getElementById('f-ingredients').value =
+        (data.extendedIngredients || []).map(i => i.original).join('\n');
+      document.getElementById('f-steps').value =
+        (data.analyzedInstructions?.[0]?.steps || []).map(s => s.step).join('\n');
+      document.getElementById('f-sourceUrl').value = url;
+      document.getElementById('f-sourceType').value = 'website';
+      setExtractMsg('Recipe extracted! Review the details below before saving.', 'success');
+    }
 
   } catch {
     setExtractMsg('Network error. Check your connection and try again.', 'error');
@@ -237,6 +250,42 @@ async function extractFromWebsite(url) {
     btn.disabled = false;
     btn.textContent = 'Extract';
   }
+}
+
+// Parse an Instagram caption into recipe sections
+function parseInstagramCaption(caption) {
+  const lines = caption.split('\n').map(l => l.trim()).filter(Boolean);
+  const ingredientKeywords = /^(ingredients?|what you('ll| will) need):?$/i;
+  const stepKeywords = /^(instructions?|steps?|method|directions?|how to (make|prepare|cook)):?$/i;
+
+  let title = '';
+  let ingredients = [];
+  let steps = [];
+  let notesLines = [];
+  let section = 'header';
+
+  for (const line of lines) {
+    if (ingredientKeywords.test(line)) { section = 'ingredients'; continue; }
+    if (stepKeywords.test(line)) { section = 'steps'; continue; }
+
+    if (section === 'header') {
+      if (!title) title = line; // first line is the title
+      else notesLines.push(line);
+    } else if (section === 'ingredients') {
+      ingredients.push(line.replace(/^[-•*✓]\s*/, ''));
+    } else if (section === 'steps') {
+      steps.push(line.replace(/^\d+[.)]\s*/, ''));
+    } else {
+      notesLines.push(line);
+    }
+  }
+
+  // Fallback: if no sections detected, put everything in notes
+  if (ingredients.length === 0 && steps.length === 0) {
+    notesLines = lines.slice(1);
+  }
+
+  return { title, ingredients, steps, notes: notesLines.join('\n') };
 }
 
 function setExtractMsg(text, type) {
