@@ -334,7 +334,8 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
     // Translate if missing a language or if en === pt (untranslated)
     if (needsTranslation(r)) {
-      const existing = r.pt || r.en || {};
+      const sourceLang = (r.pt && !r.en) ? 'pt' : 'en';
+      const existing = sourceLang === 'pt' ? r.pt : (r.en || {});
       const flat = {
         title: existing.title || r.title || '',
         ingredients: existing.ingredients || r.ingredients || [],
@@ -342,6 +343,7 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
         notes: existing.notes || r.notes || '',
         servings: existing.servings || r.servings || null,
         readyInMinutes: existing.readyInMinutes || r.readyInMinutes || null,
+        sourceLang,
       };
       try {
         const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
@@ -615,7 +617,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
         fetch(`${WORKER_URL}?action=translate-recipe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, ingredients, steps, notes, servings, readyInMinutes: readyInMin }),
+          body: JSON.stringify({ title, ingredients, steps, notes, servings, readyInMinutes: readyInMin, sourceLang: currentLang }),
         }).then(r => r.ok ? r.json() : null).then(translated => {
           if (translated?.[otherLang]) {
             update(ref(db, `recipes/${recipeId}`), { [otherLang]: translated[otherLang] });
@@ -640,7 +642,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
           const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, servings, readyInMinutes: readyInMin, ingredients, steps, notes }),
+            body: JSON.stringify({ title, servings, readyInMinutes: readyInMin, ingredients, steps, notes, sourceLang: currentLang }),
           });
           if (res.ok) {
             bilingualData = await res.json();
