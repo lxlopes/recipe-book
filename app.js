@@ -88,6 +88,7 @@ let editingRecipeId = null;
 let currentCategory = 'all';
 let currentLang = localStorage.getItem('recipeLang') || 'pt';
 let extractedBilingual = null; // full bilingual data from last URL extraction
+const brokenImages = new Set(); // recipe IDs whose image URLs fail to load
 
 // ============================================================
 // HELPERS
@@ -280,7 +281,7 @@ function renderGrid(recipes) {
     return `
       <div class="recipe-card" data-id="${r.id}">
         ${r.image
-          ? `<img class="recipe-card-img" src="${esc(r.image)}" alt="${esc(rd.title)}" onerror="this.style.display='none'">`
+          ? `<img class="recipe-card-img" src="${esc(r.image)}" alt="${esc(rd.title)}" onerror="this.style.display='none';document.dispatchEvent(new CustomEvent('imgErr',{detail:'${r.id}'}));">`
           : `<div class="recipe-card-img-placeholder"></div>`
         }
         <div class="recipe-card-body">
@@ -308,13 +309,18 @@ document.getElementById('searchInput').addEventListener('input', () => {
   renderGrid(getFilteredRecipes());
 });
 
+document.addEventListener('imgErr', e => brokenImages.add(e.detail));
+
 document.getElementById('addRecipeBtn').addEventListener('click', showAddView);
 
 // ── Sync / Bootstrap ──────────────────────────────────────────
 document.getElementById('syncBtn').addEventListener('click', async () => {
   const btn = document.getElementById('syncBtn');
   const recipes = Object.values(allRecipes);
-  const pending = recipes.filter(r => !r.en || !r.pt || !r.image);
+  // Also catch: same title in both languages (translation was a no-op) or broken image URL
+  const needsTranslation = r => !r.en || !r.pt || (r.en && r.pt && r.en.title === r.pt.title);
+  const needsImage = r => !r.image || brokenImages.has(r.id);
+  const pending = recipes.filter(r => needsTranslation(r) || needsImage(r));
   if (!pending.length) { btn.textContent = 'All synced!'; setTimeout(() => { btn.textContent = 'Sync'; }, 2000); return; }
 
   btn.disabled = true;
@@ -326,8 +332,8 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
     btn.textContent = `Syncing ${i + 1}/${pending.length}...`;
     const updateData = {};
 
-    // Translate if missing a language
-    if (!r.en || !r.pt) {
+    // Translate if missing a language or if en === pt (untranslated)
+    if (needsTranslation(r)) {
       const existing = r.pt || r.en || {};
       const flat = {
         title: existing.title || r.title || '',
@@ -345,8 +351,9 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
         });
         if (res.ok) {
           const translated = await res.json();
-          if (!r.en && translated.en) updateData.en = translated.en;
-          if (!r.pt && translated.pt) updateData.pt = translated.pt;
+          // Always update en if it was missing or was a copy of pt
+          if (translated.en && (!r.en || r.en.title === r.pt?.title)) updateData.en = translated.en;
+          if (translated.pt && !r.pt) updateData.pt = translated.pt;
           if (!r.category && translated.category) updateData.category = translated.category;
         } else {
           const errData = await res.json().catch(() => ({}));
@@ -357,8 +364,8 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
       }
     }
 
-    // Fetch image if missing
-    if (!r.image) {
+    // Fetch image if missing or broken
+    if (needsImage(r)) {
       const title = updateData.en?.title || updateData.pt?.title || (r.en || r.pt || {}).title || r.title || '';
       try {
         const res = await fetch(`${WORKER_URL}?action=get-image&title=${encodeURIComponent(title)}`);
