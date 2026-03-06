@@ -131,7 +131,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
   z-index: 100;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 0.75rem 1.25rem;
+  padding: 0.75rem 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -158,7 +158,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
    RECIPE LIST
    ============================================================ */
 .list-content {
-  padding: 1rem;
+  padding: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
   padding-bottom: 6rem;
@@ -290,7 +290,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
 .add-content {
   max-width: 640px;
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: 1.5rem;
   padding-bottom: 3rem;
 }
 
@@ -341,7 +341,8 @@ select:focus { outline: none; border-color: var(--primary); }
   padding-bottom: 3rem;
 }
 .detail-image { width: 100%; max-height: 360px; object-fit: cover; display: block; }
-.detail-body { padding: 1.25rem; }
+#d-video.detail-image { max-height: 80vh; background: #000; object-fit: contain; }
+.detail-body { padding: 1.5rem; }
 
 .source-badge {
   display: inline-block;
@@ -431,4 +432,8 @@ select:focus { outline: none; border-color: var(--primary); }
   .recipe-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .detail-body h2 { font-size: 1.3rem; }
   .header-actions { gap: 0.3rem; }
+  .list-content, .add-content { padding: 1rem; padding-bottom: 6rem; }
+  .detail-body { padding: 1rem; }
+  .app-header { padding: 0.75rem 1rem; }
+  #d-video.detail-image { max-height: 90vw; }
 }
