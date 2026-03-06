@@ -105,7 +105,8 @@ function esc(str) {
 function getRD(recipe, lang) {
   const l = lang || currentLang;
   if (recipe[l]) return recipe[l];
-  if (recipe.en) return recipe.en;
+  const other = l === 'en' ? 'pt' : 'en';
+  if (recipe[other]) return recipe[other]; // fallback to whichever language exists
   return {
     title: recipe.title || '',
     servings: recipe.servings || null,
@@ -243,7 +244,12 @@ function getFilteredRecipes() {
 // ============================================================
 function loadRecipes() {
   onValue(ref(db, 'recipes'), snapshot => {
-    allRecipes = snapshot.val() || {};
+    const raw = snapshot.val() || {};
+    // Ensure each recipe's id field matches its Firebase key
+    allRecipes = {};
+    Object.entries(raw).forEach(([key, val]) => {
+      allRecipes[key] = { ...val, id: key };
+    });
     renderCategoryFilters();
     renderGrid(getFilteredRecipes());
   });
@@ -494,29 +500,27 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
 
   try {
     if (editingRecipeId) {
-      const existing = allRecipes[editingRecipeId];
+      const existing = allRecipes[editingRecipeId] || {};
       const langData = { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes };
       const otherLang = currentLang === 'pt' ? 'en' : 'pt';
       const updateObj = { [`${currentLang}`]: langData, category, image, tags, sourceUrl, sourceType };
 
-      // Auto-translate to the other language on first edit
-      if (!existing[otherLang]) {
-        btn.innerHTML = `<span class="spinner"></span>${lbl('translating')}`;
-        try {
-          const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, ingredients, steps, notes, servings, readyInMinutes: readyInMin }),
-          });
-          if (res.ok) {
-            const translated = await res.json();
-            if (translated[otherLang]) updateObj[otherLang] = translated[otherLang];
-            if (translated.category && category === 'other') updateObj.category = translated.category;
-          }
-        } catch { /* skip translation if worker fails */ }
-      }
-
+      // Save immediately so the button is never stuck waiting
       await update(ref(db, `recipes/${editingRecipeId}`), updateObj);
+
+      // Then translate to the other language in the background (fire and forget)
+      if (!existing[otherLang]) {
+        const recipeId = editingRecipeId;
+        fetch(`${WORKER_URL}?action=translate-recipe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, ingredients, steps, notes, servings, readyInMinutes: readyInMin }),
+        }).then(r => r.ok ? r.json() : null).then(translated => {
+          if (translated?.[otherLang]) {
+            update(ref(db, `recipes/${recipeId}`), { [otherLang]: translated[otherLang] });
+          }
+        }).catch(() => {});
+      }
     } else {
       // New recipe
       let bilingualData;
