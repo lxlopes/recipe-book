@@ -355,7 +355,8 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
           const translated = await res.json();
           // Always update en if it was missing or was a copy of pt
           if (translated.en && (!r.en || r.en.title === r.pt?.title)) updateData.en = translated.en;
-          if (translated.pt && !r.pt) updateData.pt = translated.pt;
+          // Always update pt if missing or was a copy of en (untranslated)
+          if (translated.pt && (!r.pt || r.en?.title === r.pt?.title)) updateData.pt = translated.pt;
           if (!r.category && translated.category) updateData.category = translated.category;
         } else {
           const errData = await res.json().catch(() => ({}));
@@ -744,11 +745,57 @@ function openDetail(id) {
   document.getElementById('d-added-by').textContent = `${lbl('addedBy')}: ${r.addedBy || 'unknown'}`;
   document.getElementById('editBtn').onclick = () => showEditView(id);
   document.getElementById('deleteBtn').onclick = () => deleteRecipe(id);
+  document.getElementById('retranslateBtn').onclick = () => retranslateRecipe(id);
 
   showView('detail');
 }
 
 document.getElementById('backFromDetailBtn').addEventListener('click', () => showView('list'));
+
+async function retranslateRecipe(id) {
+  const r = allRecipes[id];
+  if (!r) return;
+  const btn = document.getElementById('retranslateBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  // Use English as source if available, else Portuguese
+  const sourceLang = r.en ? 'en' : 'pt';
+  const src = r[sourceLang] || {};
+  const flat = {
+    title: src.title || r.title || '',
+    ingredients: src.ingredients || r.ingredients || [],
+    steps: src.steps || r.steps || [],
+    notes: src.notes || r.notes || '',
+    servings: src.servings || r.servings || null,
+    readyInMinutes: src.readyInMinutes || r.readyInMinutes || null,
+    sourceLang,
+  };
+
+  try {
+    const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(flat),
+    });
+    if (res.ok) {
+      const translated = await res.json();
+      const updateObj = {};
+      if (translated.en) updateObj.en = translated.en;
+      if (translated.pt) updateObj.pt = translated.pt;
+      if (Object.keys(updateObj).length) {
+        await update(ref(db, `recipes/${id}`), updateObj);
+        openDetail(id); // refresh detail view
+      }
+    } else {
+      alert('Translation failed. Try again.');
+    }
+  } catch {
+    alert('Network error. Try again.');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Retranslate';
+}
 
 async function deleteRecipe(id) {
   if (!confirm('Delete this recipe? This cannot be undone.')) return;
