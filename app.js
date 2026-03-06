@@ -310,6 +310,67 @@ document.getElementById('searchInput').addEventListener('input', () => {
 
 document.getElementById('addRecipeBtn').addEventListener('click', showAddView);
 
+// ── Sync / Bootstrap ──────────────────────────────────────────
+document.getElementById('syncBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('syncBtn');
+  const recipes = Object.values(allRecipes);
+  const pending = recipes.filter(r => !r.en || !r.pt || !r.image);
+  if (!pending.length) { btn.textContent = 'All synced!'; setTimeout(() => { btn.textContent = 'Sync'; }, 2000); return; }
+
+  btn.disabled = true;
+  for (let i = 0; i < pending.length; i++) {
+    const r = pending[i];
+    btn.textContent = `Syncing ${i + 1}/${pending.length}...`;
+    const updateData = {};
+
+    // Translate if missing a language
+    if (!r.en || !r.pt) {
+      const existing = r.pt || r.en || {};
+      const flat = {
+        title: existing.title || r.title || '',
+        ingredients: existing.ingredients || r.ingredients || [],
+        steps: existing.steps || r.steps || [],
+        notes: existing.notes || r.notes || '',
+        servings: existing.servings || r.servings || null,
+        readyInMinutes: existing.readyInMinutes || r.readyInMinutes || null,
+      };
+      try {
+        const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flat),
+        });
+        if (res.ok) {
+          const translated = await res.json();
+          if (!r.en && translated.en) updateData.en = translated.en;
+          if (!r.pt && translated.pt) updateData.pt = translated.pt;
+          if (!r.category && translated.category) updateData.category = translated.category;
+        }
+      } catch { /* skip if worker unavailable */ }
+    }
+
+    // Fetch image if missing
+    if (!r.image) {
+      const title = (r.en || r.pt || {}).title || r.title || '';
+      try {
+        const res = await fetch(`${WORKER_URL}?action=get-image&title=${encodeURIComponent(title)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.image) updateData.image = data.image;
+        }
+      } catch { /* skip */ }
+    }
+
+    if (Object.keys(updateData).length) {
+      await update(ref(db, `recipes/${r.id}`), updateData).catch(() => {});
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Done!';
+  setTimeout(() => { btn.textContent = 'Sync'; }, 3000);
+});
+
 // ============================================================
 // ADD / EDIT VIEW
 // ============================================================
