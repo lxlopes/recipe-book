@@ -498,8 +498,10 @@ async function extractFromUrl(url) {
     const data = await res.json();
     extractedBilingual = data;
 
-    // Fallback: fetch image from Pexels if worker returned none
-    if (!data.image) {
+    // For Instagram: always fetch from Pexels (Instagram CDN URLs expire within hours)
+    // For other sources: only fetch if no image was returned
+    const needsPexels = data.type === 'instagram' || !data.image;
+    if (needsPexels) {
       const title = data.en?.title || data.pt?.title || '';
       if (title) {
         try {
