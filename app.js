@@ -694,13 +694,23 @@ function openDetail(id) {
   const rd = getRD(r);
   document.getElementById('d-title')._recipeId = id;
 
+  const video = document.getElementById('d-video');
   const img = document.getElementById('d-image');
-  if (r.image) {
-    img.src = r.image;
-    img.style.display = 'block';
-    img.onerror = () => { img.style.display = 'none'; };
-  } else {
+  if (r.videoUrl && r.sourceType === 'instagram') {
+    video.src = r.videoUrl;
+    video.classList.remove('hidden');
+    video.onerror = () => { video.classList.add('hidden'); }; // hide if URL expired
     img.style.display = 'none';
+  } else {
+    video.classList.add('hidden');
+    video.src = '';
+    if (r.image) {
+      img.src = r.image;
+      img.style.display = 'block';
+      img.onerror = () => { img.style.display = 'none'; };
+    } else {
+      img.style.display = 'none';
+    }
   }
 
   document.getElementById('d-source-badge').textContent =
