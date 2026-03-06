@@ -432,8 +432,8 @@ select:focus { outline: none; border-color: var(--primary); }
   .recipe-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .detail-body h2 { font-size: 1.3rem; }
   .header-actions { gap: 0.3rem; }
-  .list-content, .add-content { padding: 1rem; padding-bottom: 6rem; }
-  .detail-body { padding: 1rem; }
-  .app-header { padding: 0.75rem 1rem; }
+  .list-content, .add-content { padding: 1.25rem; padding-bottom: 6rem; }
+  .detail-body { padding: 1.25rem; }
+  .app-header { padding: 0.75rem 1.25rem; }
   #d-video.detail-image { max-height: 90vw; }
 }
