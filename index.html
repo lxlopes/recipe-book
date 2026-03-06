@@ -11,7 +11,7 @@
   <!-- VIEW: Login -->
   <div id="view-login" class="view">
     <div class="login-card">
-      <div class="login-logo">🍴</div>
+      <div class="login-logo">&#x1F374;</div>
       <h1>Our Recipe Book</h1>
       <form id="loginForm">
         <input type="email" id="emailInput" placeholder="Email" required autocomplete="email">
@@ -26,12 +26,16 @@
   <div id="view-list" class="view hidden">
     <header class="app-header">
       <h1>Our Recipe Book</h1>
-      <button id="signOutBtn" class="btn-ghost">Sign Out</button>
+      <div class="header-actions">
+        <button id="langBtn" class="btn-lang">EN</button>
+        <button id="signOutBtn" class="btn-ghost">Sign Out</button>
+      </div>
     </header>
     <div class="list-content">
       <div class="search-bar">
         <input type="text" id="searchInput" placeholder="Search by name or tag...">
       </div>
+      <div id="categoryFilters" class="category-filters"></div>
       <div id="recipeGrid" class="recipe-grid"></div>
       <div id="emptyState" class="empty-state hidden">
         <p>No recipes yet.<br>Add your first one!</p>
@@ -43,7 +47,7 @@
   <!-- VIEW: Add / Edit Recipe -->
   <div id="view-add" class="view hidden">
     <header class="app-header">
-      <button id="backFromAddBtn" class="btn-ghost">← Back</button>
+      <button id="backFromAddBtn" class="btn-ghost">&#8592; Back</button>
       <h2 id="addViewTitle">Add Recipe</h2>
       <div></div>
     </header>
@@ -66,11 +70,22 @@
         </div>
         <div class="form-row">
           <div class="form-group">
+            <label>Category</label>
+            <select id="f-category">
+              <option value="other">Other</option>
+              <option value="breakfast">Breakfast</option>
+              <option value="main">Main Course</option>
+              <option value="dessert">Dessert</option>
+              <option value="snack">Snack</option>
+              <option value="drinks">Drinks</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Servings</label>
             <input type="number" id="f-servings" placeholder="4" min="1">
           </div>
           <div class="form-group">
-            <label>Time (minutes)</label>
+            <label>Time (min)</label>
             <input type="number" id="f-time" placeholder="30" min="1">
           </div>
         </div>
@@ -80,7 +95,7 @@
         </div>
         <div class="form-group">
           <label>Steps * <span class="hint">(one per line)</span></label>
-          <textarea id="f-steps" rows="10" placeholder="Boil pasta in salted water.&#10;Fry guanciale until crispy.&#10;Mix eggs and cheese." required></textarea>
+          <textarea id="f-steps" rows="10" placeholder="Boil pasta in salted water.&#10;Fry guanciale until crispy." required></textarea>
         </div>
         <div class="form-group">
           <label>Notes</label>
@@ -100,8 +115,9 @@
   <!-- VIEW: Recipe Detail -->
   <div id="view-detail" class="view hidden">
     <header class="app-header">
-      <button id="backFromDetailBtn" class="btn-ghost">← Back</button>
-      <div class="detail-actions">
+      <button id="backFromDetailBtn" class="btn-ghost">&#8592; Back</button>
+      <div class="header-actions">
+        <button id="langBtnDetail" class="btn-lang">EN</button>
         <button id="editBtn" class="btn-ghost">Edit</button>
         <button id="deleteBtn" class="btn-danger">Delete</button>
       </div>
@@ -110,19 +126,20 @@
       <img id="d-image" src="" alt="" class="detail-image">
       <div class="detail-body">
         <div id="d-source-badge" class="source-badge"></div>
+        <div id="d-category-badge" class="category-badge"></div>
         <h2 id="d-title"></h2>
         <div id="d-meta" class="detail-meta"></div>
         <div id="d-tags" class="tags-row"></div>
         <section>
-          <h3>Ingredients</h3>
+          <h3 id="lbl-ingredients">Ingredients</h3>
           <ul id="d-ingredients"></ul>
         </section>
         <section>
-          <h3>Steps</h3>
+          <h3 id="lbl-steps">Steps</h3>
           <ol id="d-steps"></ol>
         </section>
         <section id="d-notes-section" class="hidden">
-          <h3>Notes</h3>
+          <h3 id="lbl-notes">Notes</h3>
           <p id="d-notes"></p>
         </section>
         <a id="d-source-link" href="#" target="_blank" rel="noopener" class="source-link hidden"></a>
