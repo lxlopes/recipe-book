@@ -318,8 +318,11 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   if (!pending.length) { btn.textContent = 'All synced!'; setTimeout(() => { btn.textContent = 'Sync'; }, 2000); return; }
 
   btn.disabled = true;
+  let updated = 0, failed = 0;
+
   for (let i = 0; i < pending.length; i++) {
     const r = pending[i];
+    const name = (r.pt || r.en || {}).title || r.title || r.id;
     btn.textContent = `Syncing ${i + 1}/${pending.length}...`;
     const updateData = {};
 
@@ -345,30 +348,53 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
           if (!r.en && translated.en) updateData.en = translated.en;
           if (!r.pt && translated.pt) updateData.pt = translated.pt;
           if (!r.category && translated.category) updateData.category = translated.category;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.error(`Sync: translation failed for "${name}" (${res.status}):`, errData);
         }
-      } catch { /* skip if worker unavailable */ }
+      } catch (err) {
+        console.error(`Sync: network error translating "${name}":`, err);
+      }
     }
 
     // Fetch image if missing
     if (!r.image) {
-      const title = (r.en || r.pt || {}).title || r.title || '';
+      const title = updateData.en?.title || updateData.pt?.title || (r.en || r.pt || {}).title || r.title || '';
       try {
         const res = await fetch(`${WORKER_URL}?action=get-image&title=${encodeURIComponent(title)}`);
         if (res.ok) {
           const data = await res.json();
           if (data.image) updateData.image = data.image;
+        } else {
+          console.error(`Sync: image fetch failed for "${name}" (${res.status})`);
         }
-      } catch { /* skip */ }
+      } catch (err) {
+        console.error(`Sync: network error fetching image for "${name}":`, err);
+      }
     }
 
     if (Object.keys(updateData).length) {
-      await update(ref(db, `recipes/${r.id}`), updateData).catch(() => {});
+      try {
+        await update(ref(db, `recipes/${r.id}`), updateData);
+        updated++;
+      } catch (err) {
+        console.error(`Sync: Firebase update failed for "${name}":`, err);
+        failed++;
+      }
+    } else {
+      console.warn(`Sync: nothing to update for "${name}" — translation and image both failed`);
+      failed++;
     }
   }
 
   btn.disabled = false;
-  btn.textContent = 'Done!';
-  setTimeout(() => { btn.textContent = 'Sync'; }, 3000);
+  if (failed > 0) {
+    btn.textContent = `Done (${updated} ok, ${failed} failed — open F12 Console for details)`;
+    setTimeout(() => { btn.textContent = 'Sync'; }, 6000);
+  } else {
+    btn.textContent = `Done! ${updated} updated`;
+    setTimeout(() => { btn.textContent = 'Sync'; }, 3000);
+  }
 });
 
 // ============================================================
