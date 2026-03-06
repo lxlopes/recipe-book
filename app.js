@@ -107,20 +107,20 @@ function renderGrid(recipes) {
     <div class="recipe-card" data-id="${r.id}">
       ${r.image
         ? `<img class="recipe-card-img" src="${esc(r.image)}" alt="${esc(r.title)}" onerror="this.style.display='none'">`
-        : `<div class="recipe-card-img-placeholder">🍽️</div>`
+        : `<div class="recipe-card-img-placeholder">ðŸ½ï¸</div>`
       }
       <div class="recipe-card-body">
         <div class="recipe-card-title">${esc(r.title)}</div>
         <div class="recipe-card-meta">
-          ${r.readyInMinutes ? `⏱ ${r.readyInMinutes} min` : ''}
-          ${r.readyInMinutes && r.servings ? ' · ' : ''}
+          ${r.readyInMinutes ? `â± ${r.readyInMinutes} min` : ''}
+          ${r.readyInMinutes && r.servings ? ' Â· ' : ''}
           ${r.servings ? `${r.servings} servings` : ''}
         </div>
         <div class="tags-row">
           ${(r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
         </div>
         <div class="source-icon">
-          ${r.sourceType === 'instagram' ? '📸 Instagram' : '🌐 Web'}
+          ${r.sourceType === 'instagram' ? 'ðŸ“¸ Instagram' : 'ðŸŒ Web'}
         </div>
       </div>
     </div>
@@ -192,12 +192,7 @@ document.getElementById('backFromAddBtn').addEventListener('click', () => showVi
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const url = document.getElementById('urlInput').value.trim();
   if (!url) return;
-  const isInstagram = url.includes('instagram.com') || url.includes('instagr.am');
-  if (isInstagram) {
-    showCaptionPasteUI(url);
-  } else {
-    await extractFromUrl(url);
-  }
+  await extractFromUrl(url);
 });
 
 async function extractFromUrl(url) {
@@ -226,16 +221,16 @@ async function extractFromUrl(url) {
     const data = await res.json();
 
     if (data.type === 'instagram') {
-      // Parse caption into recipe sections
-      const parsed = parseInstagramCaption(data.caption || '');
-      document.getElementById('f-title').value = parsed.title;
+      document.getElementById('f-title').value = data.title || '';
       document.getElementById('f-image').value = data.image || '';
-      document.getElementById('f-ingredients').value = parsed.ingredients.join('\n');
-      document.getElementById('f-steps').value = parsed.steps.join('\n');
-      document.getElementById('f-notes').value = parsed.notes;
+      document.getElementById('f-servings').value = data.servings || '';
+      document.getElementById('f-time').value = data.readyInMinutes || '';
+      document.getElementById('f-ingredients').value = (data.ingredients || []).join('\n');
+      document.getElementById('f-steps').value = (data.steps || []).join('\n');
+      document.getElementById('f-notes').value = data.notes || '';
       document.getElementById('f-sourceUrl').value = url;
       document.getElementById('f-sourceType').value = 'instagram';
-      setExtractMsg('Instagram post extracted! Review and adjust the fields below before saving.', 'success');
+      setExtractMsg('Instagram recipe extracted! Review and adjust the fields below before saving.', 'success');
     } else {
       // Regular website via Spoonacular
       document.getElementById('f-title').value = data.title || '';
@@ -259,51 +254,6 @@ async function extractFromUrl(url) {
   }
 }
 
-// Parse an Instagram caption into recipe sections
-function parseInstagramCaption(caption) {
-  const lines = caption.split('\n').map(l => l.trim()).filter(Boolean);
-
-  const ingredientKeywords = /^(ingredients?|what you('ll| will) need|serves?\s*\d*|makes?\s*\d*|for\s+\d+\s+\w+):?$/i;
-  const stepKeywords = /^(instructions?|steps?|method|directions?|how to (make|prepare|cook)|preparation|to make|to cook):?$/i;
-  const hashtagLine = s => s.split(' ').every(w => w.startsWith('#') || w === '');
-
-  let title = '';
-  let ingredients = [];
-  let steps = [];
-  let notesLines = [];
-  let section = 'header';
-
-  for (const line of lines) {
-    // Skip hashtag-only lines
-    if (hashtagLine(line)) continue;
-
-    if (ingredientKeywords.test(line)) { section = 'ingredients'; continue; }
-    if (stepKeywords.test(line)) { section = 'steps'; continue; }
-
-    if (section === 'header') {
-      if (!title) title = line;
-      else notesLines.push(line);
-    } else if (section === 'ingredients') {
-      // Subsection header within ingredients (e.g. "Almond filling:")
-      if (/^[A-Za-z][\w\s]+:$/.test(line)) {
-        ingredients.push(`— ${line.replace(/:$/, '')} —`);
-      } else {
-        ingredients.push(line.replace(/^[-•*✓]\s*/, ''));
-      }
-    } else if (section === 'steps') {
-      // Skip closing words and hashtags after steps
-      if (/^(enjoy|bon appétit|buon appetito|bom apetite|share|follow|tag|save|like|comment)/i.test(line)) continue;
-      steps.push(line.replace(/^\d+[.)]\s*/, ''));
-    }
-  }
-
-  // Fallback: if no sections detected, put everything in notes
-  if (ingredients.length === 0 && steps.length === 0) {
-    notesLines = lines.slice(1);
-  }
-
-  return { title, ingredients, steps, notes: notesLines.join('\n') };
-}
 
 function showCaptionPasteUI(url) {
   setExtractMsg('Instagram Reels cannot be auto-extracted. Paste the caption below and click Parse:', 'info');
@@ -316,7 +266,7 @@ function showCaptionPasteUI(url) {
   box.style.cssText = 'margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem;';
   box.innerHTML = `
     <textarea id="captionInput" rows="8"
-      placeholder="Open the Instagram Reel → tap ··· → Copy caption, then paste here..."
+      placeholder="Open the Instagram Reel â†’ tap Â·Â·Â· â†’ Copy caption, then paste here..."
       style="width:100%; padding:0.75rem; border:1.5px solid #e8e0d8; border-radius:12px; font-family:inherit; font-size:0.9rem; resize:vertical;"></textarea>
     <button id="parseCaptionBtn" class="btn-primary">Parse Caption</button>
   `;
@@ -413,12 +363,12 @@ function openDetail(id) {
   }
 
   document.getElementById('d-source-badge').textContent =
-    r.sourceType === 'instagram' ? '📸 Instagram' : '🌐 Web Recipe';
+    r.sourceType === 'instagram' ? 'ðŸ“¸ Instagram' : 'ðŸŒ Web Recipe';
   document.getElementById('d-title').textContent = r.title;
 
   const meta = [];
-  if (r.readyInMinutes) meta.push(`⏱ ${r.readyInMinutes} min`);
-  if (r.servings) meta.push(`🍽 ${r.servings} servings`);
+  if (r.readyInMinutes) meta.push(`â± ${r.readyInMinutes} min`);
+  if (r.servings) meta.push(`ðŸ½ ${r.servings} servings`);
   document.getElementById('d-meta').innerHTML = meta.map(m => `<span>${m}</span>`).join('');
 
   document.getElementById('d-tags').innerHTML =
@@ -442,8 +392,8 @@ function openDetail(id) {
   if (r.sourceUrl) {
     sourceLink.href = r.sourceUrl;
     sourceLink.textContent = r.sourceType === 'instagram'
-      ? '📸 View original Instagram post'
-      : '🔗 View original recipe';
+      ? 'ðŸ“¸ View original Instagram post'
+      : 'ðŸ”— View original recipe';
     sourceLink.classList.remove('hidden');
   } else {
     sourceLink.classList.add('hidden');
