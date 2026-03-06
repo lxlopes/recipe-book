@@ -667,6 +667,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
         createdAt: Date.now(),
         addedBy: currentUser.email,
         image: image || null,
+        videoUrl: extractedBilingual?.videoUrl || null,
         category: bilingualData.category || category,
         tags: tags.length ? tags : null,
         sourceUrl: sourceUrl || null,
