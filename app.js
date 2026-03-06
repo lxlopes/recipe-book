@@ -494,12 +494,29 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
 
   try {
     if (editingRecipeId) {
-      // Edit: update only the current language version + shared fields
+      const existing = allRecipes[editingRecipeId];
       const langData = { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes };
-      await update(ref(db, `recipes/${editingRecipeId}`), {
-        [`${currentLang}`]: langData,
-        category, image, tags, sourceUrl, sourceType,
-      });
+      const otherLang = currentLang === 'pt' ? 'en' : 'pt';
+      const updateObj = { [`${currentLang}`]: langData, category, image, tags, sourceUrl, sourceType };
+
+      // Auto-translate to the other language on first edit
+      if (!existing[otherLang]) {
+        btn.innerHTML = `<span class="spinner"></span>${lbl('translating')}`;
+        try {
+          const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, ingredients, steps, notes, servings, readyInMinutes: readyInMin }),
+          });
+          if (res.ok) {
+            const translated = await res.json();
+            if (translated[otherLang]) updateObj[otherLang] = translated[otherLang];
+            if (translated.category && category === 'other') updateObj.category = translated.category;
+          }
+        } catch { /* skip translation if worker fails */ }
+      }
+
+      await update(ref(db, `recipes/${editingRecipeId}`), updateObj);
     } else {
       // New recipe
       let bilingualData;
