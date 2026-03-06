@@ -498,6 +498,17 @@ async function extractFromUrl(url) {
     const data = await res.json();
     extractedBilingual = data;
 
+    // Fallback: fetch image from Pexels if worker returned none
+    if (!data.image) {
+      const title = data.en?.title || data.pt?.title || '';
+      if (title) {
+        try {
+          const imgRes = await fetch(`${WORKER_URL}?action=get-image&title=${encodeURIComponent(title)}`);
+          if (imgRes.ok) { const imgData = await imgRes.json(); if (imgData.image) data.image = imgData.image; }
+        } catch {}
+      }
+    }
+
     const rd = getRD(data);
     document.getElementById('f-title').value = rd.title || '';
     document.getElementById('f-image').value = data.image || '';
