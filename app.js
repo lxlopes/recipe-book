@@ -503,7 +503,14 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
       const existing = allRecipes[editingRecipeId] || {};
       const langData = { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes };
       const otherLang = currentLang === 'pt' ? 'en' : 'pt';
-      const updateObj = { [`${currentLang}`]: langData, category, image, tags, sourceUrl, sourceType };
+      const updateObj = {
+        [`${currentLang}`]: langData,
+        category,
+        image: image || null,
+        tags: tags.length ? tags : null,
+        sourceUrl: sourceUrl || null,
+        sourceType,
+      };
 
       // Save immediately so the button is never stuck waiting
       await update(ref(db, `recipes/${editingRecipeId}`), updateObj);
@@ -562,18 +569,19 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
         id: newRef.key,
         createdAt: Date.now(),
         addedBy: currentUser.email,
-        image,
+        image: image || null,
         category: bilingualData.category || category,
-        tags,
-        sourceUrl,
+        tags: tags.length ? tags : null,
+        sourceUrl: sourceUrl || null,
         sourceType,
         en: bilingualData.en || null,
         pt: bilingualData.pt || null,
       });
     }
     showView('list');
-  } catch {
-    alert('Error saving recipe. Please try again.');
+  } catch (err) {
+    console.error('Save error:', err);
+    alert('Error saving recipe: ' + (err?.message || String(err)));
     btn.disabled = false;
     btn.textContent = editingRecipeId ? 'Update Recipe' : 'Save Recipe';
   }
