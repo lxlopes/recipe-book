@@ -5,7 +5,7 @@ import { getDatabase, ref, push, set, onValue, remove, update }
   from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js';
 
 // ============================================================
-// CONFIGURATION
+// CONFIG
 // ============================================================
 const firebaseConfig = {
   apiKey: "AIzaSyAf9D-jeNf6Gfy7fqVedLHKnd7IaAGzzck",
@@ -16,11 +16,67 @@ const firebaseConfig = {
   messagingSenderId: "404542514103",
   appId: "1:404542514103:web:f7c6d4b54f215d59ffbe32"
 };
-
 const WORKER_URL = 'https://recipe-proxy.luislopes.workers.dev';
 
 // ============================================================
-// INIT
+// CONSTANTS
+// ============================================================
+const CATEGORIES = {
+  breakfast: { en: 'Breakfast',    pt: 'Pequeno-almo\u00e7o' },
+  main:      { en: 'Main Course',  pt: 'Prato Principal' },
+  dessert:   { en: 'Dessert',      pt: 'Sobremesa' },
+  snack:     { en: 'Snack',        pt: 'Snack' },
+  drinks:    { en: 'Drinks',       pt: 'Bebidas' },
+  other:     { en: 'Other',        pt: 'Outro' },
+};
+
+const LABELS = {
+  en: {
+    ingredients: 'Ingredients',
+    steps: 'Steps',
+    notes: 'Notes',
+    allCat: 'All',
+    min: 'min',
+    servings: 'servings',
+    source: 'Web Recipe',
+    igSource: 'Instagram',
+    viewOriginal: 'View original recipe',
+    viewInstagram: 'View on Instagram',
+    addedBy: 'Added by',
+    noCaption: 'This post has no recipe in the caption. The recipe must be written in the Instagram caption to be extracted.',
+    igFallback: 'Could not auto-extract. Paste the caption below and click Parse:',
+    extracted: 'Recipe extracted! Review and adjust before saving.',
+    igExtracted: 'Instagram recipe extracted! Review and adjust before saving.',
+    translating: 'Translating and saving...',
+    networkError: 'Network error. Check your connection and try again.',
+    limitReached: 'Daily extraction limit reached. Add the recipe manually.',
+    extractError: 'Could not extract recipe. Try filling it in manually.',
+  },
+  pt: {
+    ingredients: 'Ingredientes',
+    steps: 'Passos',
+    notes: 'Notas',
+    allCat: 'Todos',
+    min: 'min',
+    servings: 'por\u00e7\u00f5es',
+    source: 'Receita Web',
+    igSource: 'Instagram',
+    viewOriginal: 'Ver receita original',
+    viewInstagram: 'Ver no Instagram',
+    addedBy: 'Adicionado por',
+    noCaption: 'Esta publica\u00e7\u00e3o n\u00e3o tem receita na legenda. A receita precisa estar escrita na legenda do Instagram.',
+    igFallback: 'N\u00e3o foi poss\u00edvel extrair. Cole a legenda abaixo e clique em Analisar:',
+    extracted: 'Receita extra\u00edda! Reveja antes de guardar.',
+    igExtracted: 'Receita do Instagram extra\u00edda! Reveja antes de guardar.',
+    translating: 'A traduzir e guardar...',
+    networkError: 'Erro de rede. Verifique a liga\u00e7\u00e3o.',
+    limitReached: 'Limite di\u00e1rio atingido. Adicione a receita manualmente.',
+    extractError: 'N\u00e3o foi poss\u00edvel extrair. Tente preencher manualmente.',
+  },
+};
+
+// ============================================================
+// STATE
 // ============================================================
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
@@ -29,6 +85,41 @@ const db = getDatabase(firebaseApp);
 let currentUser = null;
 let allRecipes = {};
 let editingRecipeId = null;
+let currentCategory = 'all';
+let currentLang = localStorage.getItem('recipeLang') || 'pt';
+let extractedBilingual = null; // full bilingual data from last URL extraction
+
+// ============================================================
+// HELPERS
+// ============================================================
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Get recipe content in the current language, with backward compat for old flat recipes
+function getRD(recipe, lang) {
+  const l = lang || currentLang;
+  if (recipe[l]) return recipe[l];
+  if (recipe.en) return recipe.en;
+  return {
+    title: recipe.title || '',
+    servings: recipe.servings || null,
+    readyInMinutes: recipe.readyInMinutes || null,
+    ingredients: recipe.ingredients || [],
+    steps: recipe.steps || [],
+    notes: recipe.notes || '',
+  };
+}
+
+function lbl(key) {
+  return LABELS[currentLang][key] || LABELS.en[key] || key;
+}
+
 
 // ============================================================
 // VIEW ROUTING
@@ -43,6 +134,39 @@ function showView(name) {
   target.classList.add('active');
   window.scrollTo(0, 0);
 }
+
+// ============================================================
+// LANGUAGE TOGGLE
+// ============================================================
+function applyLanguage() {
+  const isEN = currentLang === 'en';
+  document.getElementById('langBtn').textContent = isEN ? 'PT' : 'EN';
+  document.getElementById('langBtnDetail').textContent = isEN ? 'PT' : 'EN';
+  document.getElementById('lbl-ingredients').textContent = lbl('ingredients');
+  document.getElementById('lbl-steps').textContent = lbl('steps');
+  document.getElementById('lbl-notes').textContent = lbl('notes');
+  renderCategoryFilters();
+  renderGrid(getFilteredRecipes());
+  // If detail view is open, re-render it
+  if (document.getElementById('view-detail').classList.contains('active') && editingRecipeId === null) {
+    const detailTitle = document.getElementById('d-title');
+    if (detailTitle._recipeId) openDetail(detailTitle._recipeId);
+  }
+}
+
+function toggleLanguage() {
+  currentLang = currentLang === 'pt' ? 'en' : 'pt';
+  localStorage.setItem('recipeLang', currentLang);
+  applyLanguage();
+}
+
+document.getElementById('langBtn').addEventListener('click', toggleLanguage);
+document.getElementById('langBtnDetail').addEventListener('click', () => {
+  toggleLanguage();
+  // re-open detail with new language
+  const id = document.getElementById('d-title')._recipeId;
+  if (id) openDetail(id);
+});
 
 // ============================================================
 // AUTH
@@ -64,11 +188,9 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   const password = document.getElementById('passwordInput').value;
   const errorEl = document.getElementById('loginError');
   const btn = e.target.querySelector('button[type="submit"]');
-
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Signing in...';
   errorEl.textContent = '';
-
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch {
@@ -81,12 +203,49 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
 document.getElementById('signOutBtn').addEventListener('click', () => signOut(auth));
 
 // ============================================================
+// CATEGORY FILTERS
+// ============================================================
+function renderCategoryFilters() {
+  const container = document.getElementById('categoryFilters');
+  const all = { key: 'all', label: lbl('allCat') };
+  const cats = [all, ...Object.entries(CATEGORIES).map(([k, v]) => ({ key: k, label: v[currentLang] }))];
+  container.innerHTML = cats.map(c =>
+    `<button class="category-chip${currentCategory === c.key ? ' active' : ''}" data-cat="${c.key}">${esc(c.label)}</button>`
+  ).join('');
+}
+
+document.getElementById('categoryFilters').addEventListener('click', e => {
+  const chip = e.target.closest('.category-chip');
+  if (!chip) return;
+  currentCategory = chip.dataset.cat;
+  renderCategoryFilters();
+  renderGrid(getFilteredRecipes());
+});
+
+function getFilteredRecipes() {
+  let recipes = Object.values(allRecipes);
+  if (currentCategory !== 'all') {
+    recipes = recipes.filter(r => (r.category || 'other') === currentCategory);
+  }
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  if (q) {
+    recipes = recipes.filter(r => {
+      const rd = getRD(r);
+      return (rd.title || '').toLowerCase().includes(q) ||
+        (r.tags || []).some(t => t.toLowerCase().includes(q));
+    });
+  }
+  return recipes;
+}
+
+// ============================================================
 // RECIPE LIST
 // ============================================================
 function loadRecipes() {
   onValue(ref(db, 'recipes'), snapshot => {
     allRecipes = snapshot.val() || {};
-    renderGrid(Object.values(allRecipes));
+    renderCategoryFilters();
+    renderGrid(getFilteredRecipes());
   });
 }
 
@@ -103,44 +262,44 @@ function renderGrid(recipes) {
   empty.classList.add('hidden');
   recipes.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-  grid.innerHTML = recipes.map(r => `
-    <div class="recipe-card" data-id="${r.id}">
-      ${r.image
-        ? `<img class="recipe-card-img" src="${esc(r.image)}" alt="${esc(r.title)}" onerror="this.style.display='none'">`
-        : `<div class="recipe-card-img-placeholder">ðŸ½ï¸</div>`
-      }
-      <div class="recipe-card-body">
-        <div class="recipe-card-title">${esc(r.title)}</div>
-        <div class="recipe-card-meta">
-          ${r.readyInMinutes ? `â± ${r.readyInMinutes} min` : ''}
-          ${r.readyInMinutes && r.servings ? ' Â· ' : ''}
-          ${r.servings ? `${r.servings} servings` : ''}
-        </div>
-        <div class="tags-row">
-          ${(r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
-        </div>
-        <div class="source-icon">
-          ${r.sourceType === 'instagram' ? 'ðŸ“¸ Instagram' : 'ðŸŒ Web'}
+  grid.innerHTML = recipes.map(r => {
+    const rd = getRD(r);
+    const cat = CATEGORIES[r.category || 'other'];
+    const catName = cat ? cat[currentLang] : '';
+    const sourceLabel = r.sourceType === 'instagram' ? lbl('igSource') : lbl('source');
+    const metaParts = [];
+    if (rd.readyInMinutes) metaParts.push(`${rd.readyInMinutes} ${lbl('min')}`);
+    if (rd.servings) metaParts.push(`${rd.servings} ${lbl('servings')}`);
+
+    return `
+      <div class="recipe-card" data-id="${r.id}">
+        ${r.image
+          ? `<img class="recipe-card-img" src="${esc(r.image)}" alt="${esc(rd.title)}" onerror="this.style.display='none'">`
+          : `<div class="recipe-card-img-placeholder"></div>`
+        }
+        <div class="recipe-card-body">
+          <div class="recipe-card-title">${esc(rd.title)}</div>
+          <div class="recipe-card-meta">${esc(metaParts.join(' \u00b7 '))}</div>
+          <div class="tags-row">
+            ${(r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+          </div>
+          <div class="card-footer">
+            <span class="category-label">${esc(catName)}</span>
+            <span class="source-label">${esc(sourceLabel)}</span>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
-// Open detail on card click
 document.getElementById('recipeGrid').addEventListener('click', e => {
   const card = e.target.closest('.recipe-card');
   if (card) openDetail(card.dataset.id);
 });
 
-// Search
-document.getElementById('searchInput').addEventListener('input', e => {
-  const q = e.target.value.toLowerCase().trim();
-  const filtered = Object.values(allRecipes).filter(r =>
-    r.title.toLowerCase().includes(q) ||
-    (r.tags || []).some(t => t.toLowerCase().includes(q))
-  );
-  renderGrid(filtered);
+document.getElementById('searchInput').addEventListener('input', () => {
+  renderGrid(getFilteredRecipes());
 });
 
 document.getElementById('addRecipeBtn').addEventListener('click', showAddView);
@@ -160,17 +319,21 @@ function showEditView(id) {
   const r = allRecipes[id];
   if (!r) return;
   editingRecipeId = id;
+  extractedBilingual = null;
   resetForm();
   document.getElementById('addViewTitle').textContent = 'Edit Recipe';
   document.getElementById('saveBtn').textContent = 'Update Recipe';
+
+  const rd = getRD(r);
   document.getElementById('urlInput').value = r.sourceUrl || '';
-  document.getElementById('f-title').value = r.title || '';
+  document.getElementById('f-title').value = rd.title || '';
   document.getElementById('f-image').value = r.image || '';
-  document.getElementById('f-servings').value = r.servings || '';
-  document.getElementById('f-time').value = r.readyInMinutes || '';
-  document.getElementById('f-ingredients').value = (r.ingredients || []).join('\n');
-  document.getElementById('f-steps').value = (r.steps || []).join('\n');
-  document.getElementById('f-notes').value = r.notes || '';
+  document.getElementById('f-category').value = r.category || 'other';
+  document.getElementById('f-servings').value = rd.servings || '';
+  document.getElementById('f-time').value = rd.readyInMinutes || '';
+  document.getElementById('f-ingredients').value = (rd.ingredients || []).join('\n');
+  document.getElementById('f-steps').value = (rd.steps || []).join('\n');
+  document.getElementById('f-notes').value = rd.notes || '';
   document.getElementById('f-tags').value = (r.tags || []).join(', ');
   document.getElementById('f-sourceUrl').value = r.sourceUrl || '';
   document.getElementById('f-sourceType').value = r.sourceType || 'website';
@@ -180,15 +343,17 @@ function showEditView(id) {
 function resetForm() {
   document.getElementById('urlInput').value = '';
   document.getElementById('recipeForm').reset();
+  document.getElementById('f-category').value = 'other';
   document.getElementById('f-sourceUrl').value = '';
   document.getElementById('f-sourceType').value = 'website';
   setExtractMsg('', '');
   document.getElementById('captionPasteBox')?.remove();
+  extractedBilingual = null;
 }
 
 document.getElementById('backFromAddBtn').addEventListener('click', () => showView('list'));
 
-// URL extraction
+// ── URL extraction ────────────────────────────────────────────
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const url = document.getElementById('urlInput').value.trim();
   if (!url) return;
@@ -205,7 +370,16 @@ async function extractFromUrl(url) {
     const res = await fetch(`${WORKER_URL}?url=${encodeURIComponent(url)}`);
 
     if (res.status === 402) {
-      setExtractMsg('Daily extraction limit reached. Add the recipe manually.', 'error');
+      setExtractMsg(lbl('limitReached'), 'error');
+      return;
+    }
+    if (res.status === 422) {
+      const data = await res.json().catch(() => ({}));
+      if (data.error === 'no_caption') {
+        setExtractMsg(lbl('noCaption'), 'error');
+      } else {
+        showCaptionPasteUI(url);
+      }
       return;
     }
     if (!res.ok) {
@@ -213,52 +387,40 @@ async function extractFromUrl(url) {
       if (isInstagram) {
         showCaptionPasteUI(url);
       } else {
-        setExtractMsg('Could not extract recipe. Try filling it in manually.', 'error');
+        setExtractMsg(lbl('extractError'), 'error');
       }
       return;
     }
 
     const data = await res.json();
+    extractedBilingual = data;
 
-    if (data.type === 'instagram') {
-      document.getElementById('f-title').value = data.title || '';
-      document.getElementById('f-image').value = data.image || '';
-      document.getElementById('f-servings').value = data.servings || '';
-      document.getElementById('f-time').value = data.readyInMinutes || '';
-      document.getElementById('f-ingredients').value = (data.ingredients || []).join('\n');
-      document.getElementById('f-steps').value = (data.steps || []).join('\n');
-      document.getElementById('f-notes').value = data.notes || '';
-      document.getElementById('f-sourceUrl').value = url;
-      document.getElementById('f-sourceType').value = 'instagram';
-      setExtractMsg('Instagram recipe extracted! Review and adjust the fields below before saving.', 'success');
-    } else {
-      // Regular website via Spoonacular
-      document.getElementById('f-title').value = data.title || '';
-      document.getElementById('f-image').value = data.image || '';
-      document.getElementById('f-servings').value = data.servings || '';
-      document.getElementById('f-time').value = data.readyInMinutes || '';
-      document.getElementById('f-ingredients').value =
-        (data.extendedIngredients || []).map(i => i.original).join('\n');
-      document.getElementById('f-steps').value =
-        (data.analyzedInstructions?.[0]?.steps || []).map(s => s.step).join('\n');
-      document.getElementById('f-sourceUrl').value = url;
-      document.getElementById('f-sourceType').value = 'website';
-      setExtractMsg('Recipe extracted! Review the details below before saving.', 'success');
-    }
+    const rd = getRD(data);
+    document.getElementById('f-title').value = rd.title || '';
+    document.getElementById('f-image').value = data.image || '';
+    document.getElementById('f-category').value = data.category || 'other';
+    document.getElementById('f-servings').value = rd.servings || '';
+    document.getElementById('f-time').value = rd.readyInMinutes || '';
+    document.getElementById('f-ingredients').value = (rd.ingredients || []).join('\n');
+    document.getElementById('f-steps').value = (rd.steps || []).join('\n');
+    document.getElementById('f-notes').value = rd.notes || '';
+    document.getElementById('f-sourceUrl').value = url;
+    document.getElementById('f-sourceType').value = data.type === 'instagram' ? 'instagram' : 'website';
+
+    const msg = data.type === 'instagram' ? lbl('igExtracted') : lbl('extracted');
+    setExtractMsg(msg, 'success');
 
   } catch {
-    setExtractMsg('Network error. Check your connection and try again.', 'error');
+    setExtractMsg(lbl('networkError'), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Extract';
   }
 }
 
-
+// Caption paste fallback (if Instagram auto-extract fails)
 function showCaptionPasteUI(url) {
-  setExtractMsg('Instagram Reels cannot be auto-extracted. Paste the caption below and click Parse:', 'info');
-
-  // Remove any existing caption box
+  setExtractMsg(lbl('igFallback'), 'info');
   document.getElementById('captionPasteBox')?.remove();
 
   const box = document.createElement('div');
@@ -266,11 +428,10 @@ function showCaptionPasteUI(url) {
   box.style.cssText = 'margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem;';
   box.innerHTML = `
     <textarea id="captionInput" rows="8"
-      placeholder="Open the Instagram Reel â†’ tap Â·Â·Â· â†’ Copy caption, then paste here..."
+      placeholder="Open the Instagram post, tap ... and Copy caption, then paste here..."
       style="width:100%; padding:0.75rem; border:1.5px solid #e8e0d8; border-radius:12px; font-family:inherit; font-size:0.9rem; resize:vertical;"></textarea>
     <button id="parseCaptionBtn" class="btn-primary">Parse Caption</button>
   `;
-
   document.getElementById('extractMessage').after(box);
 
   document.getElementById('parseCaptionBtn').addEventListener('click', async () => {
@@ -279,27 +440,30 @@ function showCaptionPasteUI(url) {
 
     const parseBtn = document.getElementById('parseCaptionBtn');
     parseBtn.disabled = true;
-    parseBtn.innerHTML = '<span class="spinner"></span>AI parsing...';
+    parseBtn.innerHTML = '<span class="spinner"></span>Parsing...';
 
     try {
       const res = await fetch(`${WORKER_URL}?action=parse-caption&caption=${encodeURIComponent(caption)}`);
       if (!res.ok) throw new Error('AI failed');
-      const recipe = await res.json();
+      const data = await res.json();
+      extractedBilingual = data;
 
-      document.getElementById('f-title').value = recipe.title || '';
-      document.getElementById('f-servings').value = recipe.servings || '';
-      document.getElementById('f-time').value = recipe.readyInMinutes || '';
-      document.getElementById('f-ingredients').value = (recipe.ingredients || []).join('\n');
-      document.getElementById('f-steps').value = (recipe.steps || []).join('\n');
-      document.getElementById('f-notes').value = recipe.notes || '';
+      const rd = getRD(data);
+      document.getElementById('f-title').value = rd.title || '';
+      document.getElementById('f-category').value = data.category || 'other';
+      document.getElementById('f-servings').value = rd.servings || '';
+      document.getElementById('f-time').value = rd.readyInMinutes || '';
+      document.getElementById('f-ingredients').value = (rd.ingredients || []).join('\n');
+      document.getElementById('f-steps').value = (rd.steps || []).join('\n');
+      document.getElementById('f-notes').value = rd.notes || '';
       document.getElementById('f-sourceUrl').value = url;
       document.getElementById('f-sourceType').value = 'instagram';
       box.remove();
-      setExtractMsg('AI extracted the recipe! Review and adjust before saving.', 'success');
+      setExtractMsg(lbl('igExtracted'), 'success');
     } catch {
       parseBtn.disabled = false;
       parseBtn.textContent = 'Parse Caption';
-      setExtractMsg('AI parsing failed. Try again.', 'error');
+      setExtractMsg('Parsing failed. Try again.', 'error');
     }
   });
 }
@@ -310,33 +474,81 @@ function setExtractMsg(text, type) {
   el.className = `extract-msg ${type}`;
 }
 
-// Save recipe
+// ── Save recipe ───────────────────────────────────────────────
 document.getElementById('recipeForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Saving...';
 
-  const recipe = {
-    title:          document.getElementById('f-title').value.trim(),
-    image:          document.getElementById('f-image').value.trim(),
-    sourceUrl:      document.getElementById('f-sourceUrl').value.trim(),
-    sourceType:     document.getElementById('f-sourceType').value || 'website',
-    servings:       parseInt(document.getElementById('f-servings').value) || null,
-    readyInMinutes: parseInt(document.getElementById('f-time').value) || null,
-    ingredients:    document.getElementById('f-ingredients').value.split('\n').map(s => s.trim()).filter(Boolean),
-    steps:          document.getElementById('f-steps').value.split('\n').map(s => s.trim()).filter(Boolean),
-    notes:          document.getElementById('f-notes').value.trim(),
-    tags:           document.getElementById('f-tags').value.split(',').map(s => s.trim()).filter(Boolean),
-    addedBy:        currentUser.email,
-  };
+  const title       = document.getElementById('f-title').value.trim();
+  const image       = document.getElementById('f-image').value.trim();
+  const category    = document.getElementById('f-category').value || 'other';
+  const servings    = parseInt(document.getElementById('f-servings').value) || null;
+  const readyInMin  = parseInt(document.getElementById('f-time').value) || null;
+  const ingredients = document.getElementById('f-ingredients').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const steps       = document.getElementById('f-steps').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const notes       = document.getElementById('f-notes').value.trim();
+  const tags        = document.getElementById('f-tags').value.split(',').map(s => s.trim()).filter(Boolean);
+  const sourceUrl   = document.getElementById('f-sourceUrl').value.trim();
+  const sourceType  = document.getElementById('f-sourceType').value || 'website';
 
   try {
     if (editingRecipeId) {
-      await update(ref(db, `recipes/${editingRecipeId}`), recipe);
+      // Edit: update only the current language version + shared fields
+      const langData = { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes };
+      await update(ref(db, `recipes/${editingRecipeId}`), {
+        [`${currentLang}`]: langData,
+        category, image, tags, sourceUrl, sourceType,
+      });
     } else {
+      // New recipe
+      let bilingualData;
+
+      if (extractedBilingual && (extractedBilingual.en || extractedBilingual.pt)) {
+        // We have bilingual data from extraction — merge form edits into current language
+        bilingualData = { ...extractedBilingual };
+        bilingualData[currentLang] = {
+          ...(bilingualData[currentLang] || {}),
+          title, servings, readyInMinutes: readyInMin, ingredients, steps, notes,
+        };
+      } else {
+        // Manual entry — translate via worker
+        btn.innerHTML = `<span class="spinner"></span>${lbl('translating')}`;
+        try {
+          const res = await fetch(`${WORKER_URL}?action=translate-recipe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, servings, readyInMinutes: readyInMin, ingredients, steps, notes }),
+          });
+          if (res.ok) {
+            bilingualData = await res.json();
+            // Use form values for current language (more accurate than AI rephrase)
+            bilingualData[currentLang] = { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes };
+          }
+        } catch {
+          // Translation failed — save current language only
+        }
+        if (!bilingualData) {
+          bilingualData = {
+            category,
+            [currentLang]: { title, servings, readyInMinutes: readyInMin, ingredients, steps, notes },
+          };
+        }
+      }
+
       const newRef = push(ref(db, 'recipes'));
-      await set(newRef, { ...recipe, id: newRef.key, createdAt: Date.now() });
+      await set(newRef, {
+        id: newRef.key,
+        createdAt: Date.now(),
+        addedBy: currentUser.email,
+        image,
+        category: bilingualData.category || category,
+        tags,
+        sourceUrl,
+        sourceType,
+        en: bilingualData.en || null,
+        pt: bilingualData.pt || null,
+      });
     }
     showView('list');
   } catch {
@@ -353,6 +565,9 @@ function openDetail(id) {
   const r = allRecipes[id];
   if (!r) return;
 
+  const rd = getRD(r);
+  document.getElementById('d-title')._recipeId = id;
+
   const img = document.getElementById('d-image');
   if (r.image) {
     img.src = r.image;
@@ -363,26 +578,30 @@ function openDetail(id) {
   }
 
   document.getElementById('d-source-badge').textContent =
-    r.sourceType === 'instagram' ? 'ðŸ“¸ Instagram' : 'ðŸŒ Web Recipe';
-  document.getElementById('d-title').textContent = r.title;
+    r.sourceType === 'instagram' ? lbl('igSource') : lbl('source');
+
+  const cat = CATEGORIES[r.category || 'other'];
+  document.getElementById('d-category-badge').textContent = cat ? cat[currentLang] : '';
+
+  document.getElementById('d-title').textContent = rd.title || '';
 
   const meta = [];
-  if (r.readyInMinutes) meta.push(`â± ${r.readyInMinutes} min`);
-  if (r.servings) meta.push(`ðŸ½ ${r.servings} servings`);
-  document.getElementById('d-meta').innerHTML = meta.map(m => `<span>${m}</span>`).join('');
+  if (rd.readyInMinutes) meta.push(`${rd.readyInMinutes} ${lbl('min')}`);
+  if (rd.servings) meta.push(`${rd.servings} ${lbl('servings')}`);
+  document.getElementById('d-meta').innerHTML = meta.map(m => `<span>${esc(m)}</span>`).join('');
 
   document.getElementById('d-tags').innerHTML =
     (r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
 
   document.getElementById('d-ingredients').innerHTML =
-    (r.ingredients || []).map(i => `<li>${esc(i)}</li>`).join('');
+    (rd.ingredients || []).map(i => `<li>${esc(i)}</li>`).join('');
 
   document.getElementById('d-steps').innerHTML =
-    (r.steps || []).map(s => `<li>${esc(s)}</li>`).join('');
+    (rd.steps || []).map(s => `<li>${esc(s)}</li>`).join('');
 
   const notesSection = document.getElementById('d-notes-section');
-  if (r.notes) {
-    document.getElementById('d-notes').textContent = r.notes;
+  if (rd.notes) {
+    document.getElementById('d-notes').textContent = rd.notes;
     notesSection.classList.remove('hidden');
   } else {
     notesSection.classList.add('hidden');
@@ -391,15 +610,13 @@ function openDetail(id) {
   const sourceLink = document.getElementById('d-source-link');
   if (r.sourceUrl) {
     sourceLink.href = r.sourceUrl;
-    sourceLink.textContent = r.sourceType === 'instagram'
-      ? 'ðŸ“¸ View original Instagram post'
-      : 'ðŸ”— View original recipe';
+    sourceLink.textContent = r.sourceType === 'instagram' ? lbl('viewInstagram') : lbl('viewOriginal');
     sourceLink.classList.remove('hidden');
   } else {
     sourceLink.classList.add('hidden');
   }
 
-  document.getElementById('d-added-by').textContent = `Added by ${r.addedBy || 'unknown'}`;
+  document.getElementById('d-added-by').textContent = `${lbl('addedBy')}: ${r.addedBy || 'unknown'}`;
   document.getElementById('editBtn').onclick = () => showEditView(id);
   document.getElementById('deleteBtn').onclick = () => deleteRecipe(id);
 
@@ -419,13 +636,6 @@ async function deleteRecipe(id) {
 }
 
 // ============================================================
-// HELPERS
+// INIT
 // ============================================================
-function esc(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+applyLanguage();
