@@ -37,8 +37,8 @@ function extractJSON(text) {
 
 async function parseWithAI(caption, env) {
   const systemPrompt = `Extract a recipe from the text and return ONLY valid JSON (no markdown, no extra text):
-{"category":"breakfast|main|dessert|snack|drinks|other","en":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""},"pt":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""}}
-Rules: provide BOTH English (en) and Portuguese (pt) versions of all text fields. category is exactly one of the listed values. servings/readyInMinutes are numbers or null. Return ONLY valid JSON.`;
+{"category":"breakfast|main|dessert|snack|drinks|other","allergens":[],"en":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""},"pt":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""}}
+Rules: provide BOTH English (en) and Portuguese (pt) versions of all text fields. category is exactly one of the listed values. servings/readyInMinutes are numbers or null. allergens: array of zero or more values from [milk,eggs,fish,shellfish,treenuts,peanuts,wheat,soy,sesame,poultry] — detect based on ingredients. Return ONLY valid JSON.`;
 
   const res = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: caption }],
@@ -49,14 +49,19 @@ Rules: provide BOTH English (en) and Portuguese (pt) versions of all text fields
 
 async function translateToBI(flat, env) {
   const systemPrompt = `Translate this recipe to both English and Portuguese. Return ONLY valid JSON (no markdown, no extra text):
-{"category":"breakfast|main|dessert|snack|drinks|other","en":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""},"pt":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""}}
-Rules: translate all text fields into both en and pt. category is exactly one of the listed values. servings/readyInMinutes are numbers or null (same value in both objects). Return ONLY valid JSON.`;
+{"category":"breakfast|main|dessert|snack|drinks|other","allergens":[],"en":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""},"pt":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""}}
+Rules: translate all text fields into both en and pt. category is exactly one of the listed values. servings/readyInMinutes are numbers or null (same value in both objects). allergens: detect from ingredients and return array of zero or more values from [milk,eggs,fish,shellfish,treenuts,peanuts,wheat,soy,sesame,poultry]. Return ONLY valid JSON.`;
 
   const res = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(flat) }],
     max_tokens: 3000,
   });
-  return extractJSON(res.response || '');
+  const result = extractJSON(res.response || '');
+  // Pass through existing allergens if AI didn't detect any
+  if ((!result.allergens || !result.allergens.length) && flat.allergens && flat.allergens.length) {
+    result.allergens = flat.allergens;
+  }
+  return result;
 }
 
 export default {
@@ -100,6 +105,54 @@ export default {
         return new Response(JSON.stringify(await translateToBI(flat, env)), { headers: jsonHeaders });
       } catch (err) {
         return new Response(JSON.stringify({ error: 'Translation failed', detail: err.message }), { status: 500, headers: jsonHeaders });
+      }
+    }
+
+    // ── Extract recipe from image (base64) ────────────────────────
+    if (action === 'extract-from-image' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { imageBase64, mediaType = 'image/jpeg' } = body;
+        if (!imageBase64) {
+          return new Response(JSON.stringify({ error: 'Missing imageBase64' }), { status: 400, headers: jsonHeaders });
+        }
+
+        const visionPrompt = `Look at this image. If it contains a recipe (written text, a dish, ingredients list, cooking steps, etc.), extract the recipe and return ONLY valid JSON (no markdown, no extra text):
+{"category":"breakfast|main|dessert|snack|drinks|other","allergens":[],"en":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""},"pt":{"title":"","servings":null,"readyInMinutes":null,"ingredients":[],"steps":[],"notes":""}}
+Rules: provide BOTH English (en) and Portuguese (pt). category is exactly one of the listed values. allergens: array of zero or more values from [milk,eggs,fish,shellfish,treenuts,peanuts,wheat,soy,sesame,poultry] detected from ingredients. If the image does NOT contain a recognizable recipe, return: {"error":"no_recipe"}`;
+
+        const res = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+              { type: 'text', text: visionPrompt }
+            ]
+          }],
+          max_tokens: 2000,
+        });
+
+        let parsed;
+        try {
+          parsed = extractJSON(res.response || '');
+        } catch {
+          return new Response(JSON.stringify({ error: 'AI parsing failed' }), { status: 500, headers: jsonHeaders });
+        }
+
+        if (parsed.error === 'no_recipe') {
+          return new Response(JSON.stringify({ error: 'no_recipe' }), { status: 422, headers: jsonHeaders });
+        }
+
+        // Fetch a Pexels image for the recipe
+        const title = parsed.en?.title || parsed.pt?.title || '';
+        if (title) {
+          const pexelsImage = await fetchFoodImage(title, env);
+          if (pexelsImage) parsed.image = pexelsImage;
+        }
+
+        return new Response(JSON.stringify(parsed), { headers: jsonHeaders });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'vision_failed', detail: err.message }), { status: 500, headers: jsonHeaders });
       }
     }
 
