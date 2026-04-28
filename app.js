@@ -135,11 +135,6 @@ let mealPlanListener = null;
 // ============================================================
 // HELPERS
 // ============================================================
-function getInstagramShortcode(url) {
-  const m = url.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/);
-  return m ? m[1] : null;
-}
-
 function esc(str) {
   if (!str) return '';
   return String(str)
@@ -973,18 +968,16 @@ function openDetail(id) {
 
   const video = document.getElementById('d-video');
   const img = document.getElementById('d-image');
-  const igEmbed = document.getElementById('d-ig-embed');
+  const igLink = document.getElementById('d-ig-link');
 
   video.classList.add('hidden'); video.src = '';
-  igEmbed.classList.add('hidden'); igEmbed.src = '';
+  igLink.classList.add('hidden'); igLink.href = '';
   img.style.display = 'none';
 
   if (r.sourceType === 'instagram' && r.sourceUrl) {
-    const shortcode = getInstagramShortcode(r.sourceUrl);
-    if (shortcode) {
-      igEmbed.src = `https://www.instagram.com/p/${shortcode}/embed/`;
-      igEmbed.classList.remove('hidden');
-    } else if (r.image) {
+    igLink.href = r.sourceUrl;
+    igLink.classList.remove('hidden');
+    if (r.image) {
       img.src = r.image;
       img.style.display = 'block';
       img.onerror = () => { img.style.display = 'none'; };
