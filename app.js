@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js';
-import { getDatabase, ref, push, set, onValue, remove, update }
+import { getDatabase, ref, push, set, onValue, remove, update, get }
   from 'https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js';
 
 // ============================================================
@@ -113,6 +113,7 @@ const auth = getAuth(firebaseApp);
 const db = getDatabase(firebaseApp);
 
 let currentUser = null;
+let currentUserRole = null;
 let allRecipes = {};
 let editingRecipeId = null;
 let currentCategory = 'all';
@@ -132,6 +133,11 @@ let mealPlanListener = null;
 // ============================================================
 // HELPERS
 // ============================================================
+function getInstagramShortcode(url) {
+  const m = url.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
 function esc(str) {
   if (!str) return '';
   return String(str)
@@ -302,12 +308,15 @@ document.getElementById('langBtnDetail').addEventListener('click', () => {
 // ============================================================
 // AUTH
 // ============================================================
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   currentUser = user;
   if (user) {
+    const roleSnap = await get(ref(db, `users/${user.uid}/role`));
+    currentUserRole = roleSnap.val();
     showView('list');
     loadRecipes();
   } else {
+    currentUserRole = null;
     showView('login');
     allRecipes = {};
   }
@@ -910,11 +919,25 @@ function openDetail(id) {
 
   const video = document.getElementById('d-video');
   const img = document.getElementById('d-image');
+  const igEmbed = document.getElementById('d-ig-embed');
 
-  if (r.videoUrl) {
+  video.classList.add('hidden'); video.src = '';
+  igEmbed.classList.add('hidden'); igEmbed.src = '';
+  img.style.display = 'none';
+
+  if (r.sourceType === 'instagram' && r.sourceUrl) {
+    const shortcode = getInstagramShortcode(r.sourceUrl);
+    if (shortcode) {
+      igEmbed.src = `https://www.instagram.com/p/${shortcode}/embed/`;
+      igEmbed.classList.remove('hidden');
+    } else if (r.image) {
+      img.src = r.image;
+      img.style.display = 'block';
+      img.onerror = () => { img.style.display = 'none'; };
+    }
+  } else if (r.videoUrl) {
     video.src = r.videoUrl;
     video.classList.remove('hidden');
-    img.style.display = 'none';
     video.onerror = () => {
       video.classList.add('hidden');
       video.src = '';
@@ -922,20 +945,12 @@ function openDetail(id) {
         img.src = r.image;
         img.style.display = 'block';
         img.onerror = () => { img.style.display = 'none'; };
-      } else {
-        img.style.display = 'none';
       }
     };
-  } else {
-    video.classList.add('hidden');
-    video.src = '';
-    if (r.image) {
-      img.src = r.image;
-      img.style.display = 'block';
-      img.onerror = () => { img.style.display = 'none'; };
-    } else {
-      img.style.display = 'none';
-    }
+  } else if (r.image) {
+    img.src = r.image;
+    img.style.display = 'block';
+    img.onerror = () => { img.style.display = 'none'; };
   }
 
   document.getElementById('d-source-badge').textContent =
@@ -994,6 +1009,11 @@ function openDetail(id) {
   document.getElementById('editBtn').onclick = () => showEditView(id);
   document.getElementById('deleteBtn').onclick = () => deleteRecipe(id);
   document.getElementById('retranslateBtn').onclick = () => retranslateRecipe(id);
+
+  const isMaintenance = currentUserRole === 'maintenance';
+  document.getElementById('retranslateBtn').classList.toggle('hidden', !isMaintenance);
+  document.getElementById('editBtn').classList.toggle('hidden', !isMaintenance);
+  document.getElementById('deleteBtn').classList.toggle('hidden', !isMaintenance);
 
   requestWakeLock();
   showView('detail');
