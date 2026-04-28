@@ -396,12 +396,12 @@ select:focus { outline: none; border-color: var(--primary); }
 #d-video.detail-image { max-height: 80vh; background: #000; object-fit: contain; }
 .media-wrapper { position: relative; }
 .ig-play-btn {
-  position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
-  background: rgba(0,0,0,0.72); color: #fff; padding: 0.6rem 1.2rem;
-  border-radius: 24px; font-weight: 600; font-size: 0.95rem;
+  display: block; width: 100%; text-align: center;
+  background: var(--primary); color: #fff; padding: 0.85rem 1.2rem;
+  font-weight: 600; font-size: 0.95rem;
   text-decoration: none; white-space: nowrap;
 }
-.ig-play-btn:hover { background: rgba(0,0,0,0.9); }
+.ig-play-btn:hover { opacity: 0.88; }
 .detail-body { padding: 1.5rem; }
 
 .source-badge {
