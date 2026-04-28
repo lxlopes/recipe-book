@@ -171,22 +171,25 @@ Rules: provide BOTH English (en) and Portuguese (pt). category is exactly one of
             body: JSON.stringify({ directUrls: [recipeUrl], resultsType: 'posts', resultsLimit: 1 }),
           }
         );
-        if (!apifyRes.ok) throw new Error(`Apify ${apifyRes.status}`);
+        if (!apifyRes.ok) throw new Error(`Apify ${apifyRes.status}: ${await apifyRes.text()}`);
         const items = await apifyRes.json();
-        if (!Array.isArray(items) || !items.length) throw new Error('No results from Apify');
+        console.log('Apify response:', JSON.stringify(items).slice(0, 500));
+        if (!Array.isArray(items) || !items.length) throw new Error(`No results from Apify, got: ${JSON.stringify(items).slice(0, 200)}`);
 
         const post = items[0];
-        const caption = post.caption || post.text || '';
+        const caption = post.caption || post.text || post.description || post.accessibility_caption || '';
         if (!caption) {
+          console.log('Post fields:', Object.keys(post).join(', '));
           return new Response(JSON.stringify({ error: 'no_caption' }), { status: 422, headers: jsonHeaders });
         }
 
         const recipe = await parseWithAI(caption, env);
         recipe.type = 'instagram';
-        recipe.image = post.displayUrl || post.thumbnailUrl ||
+        recipe.image = post.displayUrl || post.thumbnailUrl || post.previewUrl ||
           await fetchFoodImage(recipe.en?.title || recipe.pt?.title, env);
         return new Response(JSON.stringify(recipe), { headers: jsonHeaders });
       } catch (err) {
+        console.error('Instagram extraction error:', err.message);
         return new Response(JSON.stringify({ error: 'instagram_error', detail: err.message }), { status: 500, headers: jsonHeaders });
       }
     }
