@@ -59,6 +59,7 @@ const LABELS = {
     igExtracted: 'Instagram recipe extracted! Review and adjust before saving.',
     photoExtracted: 'Recipe extracted from photo! Review before saving.',
     photoNoRecipe: 'No recipe found in the image.',
+    textExtracted: 'Recipe extracted from text! Review and adjust before saving.',
     translating: 'Translating and saving...',
     networkError: 'Network error. Check your connection and try again.',
     limitReached: 'Daily extraction limit reached. Add the recipe manually.',
@@ -90,6 +91,7 @@ const LABELS = {
     igExtracted: 'Receita do Instagram extraída! Reveja antes de guardar.',
     photoExtracted: 'Receita extraída da foto! Reveja antes de guardar.',
     photoNoRecipe: 'Nenhuma receita encontrada na imagem.',
+    textExtracted: 'Receita extraída do texto! Reveja antes de guardar.',
     translating: 'A traduzir e guardar...',
     networkError: 'Erro de rede. Verifique a ligação.',
     limitReached: 'Limite diário atingido. Adicione a receita manualmente.',
@@ -595,6 +597,8 @@ function resetForm() {
   document.getElementById('f-sourceType').value = 'website';
   setExtractMsg('', '');
   document.getElementById('captionPasteBox')?.remove();
+  document.getElementById('textPasteBox').classList.add('hidden');
+  document.getElementById('textPasteInput').value = '';
   extractedBilingual = null;
   setAllergenCheckboxes([]);
   document.getElementById('photoInput').value = '';
@@ -733,6 +737,56 @@ function showCaptionPasteUI(url) {
     }
   });
 }
+
+// ── Paste text extraction (Google Keep, etc.) ─────────────────
+document.getElementById('pasteTextBtn').addEventListener('click', () => {
+  document.getElementById('textPasteBox').classList.toggle('hidden');
+});
+
+document.getElementById('parseTextBtn').addEventListener('click', async () => {
+  const text = document.getElementById('textPasteInput').value.trim();
+  if (!text) return;
+
+  const btn = document.getElementById('parseTextBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Extracting...';
+  setExtractMsg('', '');
+
+  try {
+    const res = await fetch(`${WORKER_URL}?action=parse-caption&caption=${encodeURIComponent(text)}`);
+    if (!res.ok) throw new Error('AI failed');
+    const data = await res.json();
+    extractedBilingual = data;
+
+    const title = data.en?.title || data.pt?.title || '';
+    if (title) {
+      try {
+        const imgRes = await fetch(`${WORKER_URL}?action=get-image&title=${encodeURIComponent(title)}`);
+        if (imgRes.ok) { const imgData = await imgRes.json(); if (imgData.image) data.image = imgData.image; }
+      } catch {}
+    }
+
+    const rd = getRD(data);
+    document.getElementById('f-title').value = rd.title || '';
+    document.getElementById('f-image').value = data.image || '';
+    document.getElementById('f-category').value = data.category || 'other';
+    document.getElementById('f-servings').value = rd.servings || '';
+    document.getElementById('f-time').value = rd.readyInMinutes || '';
+    document.getElementById('f-ingredients').value = (rd.ingredients || []).join('\n');
+    document.getElementById('f-steps').value = (rd.steps || []).join('\n');
+    document.getElementById('f-notes').value = rd.notes || '';
+    document.getElementById('f-sourceUrl').value = '';
+    document.getElementById('f-sourceType').value = 'text';
+    if (data.allergens) setAllergenCheckboxes(data.allergens);
+    document.getElementById('textPasteBox').classList.add('hidden');
+    setExtractMsg(lbl('textExtracted'), 'success');
+  } catch {
+    setExtractMsg(lbl('extractError'), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Extract Recipe';
+  }
+});
 
 function setExtractMsg(text, type) {
   const el = document.getElementById('extractMessage');

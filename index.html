@@ -64,6 +64,11 @@
             &#x1F4F7; From Photo
           </label>
           <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
+          <button id="pasteTextBtn" class="btn-primary" style="flex:1;">&#x1F4CB; From Text</button>
+        </div>
+        <div id="textPasteBox" class="hidden" style="margin-top:0.75rem;">
+          <textarea id="textPasteInput" rows="8" placeholder="Paste your recipe text here (e.g. from Google Keep)..." style="width:100%; padding:0.75rem; border:1.5px solid #e8e0d8; border-radius:12px; font-family:inherit; font-size:0.9rem; resize:vertical; box-sizing:border-box;"></textarea>
+          <button id="parseTextBtn" class="btn-primary full-width" style="margin-top:0.5rem;">Extract Recipe</button>
         </div>
         <p id="extractMessage" class="extract-msg"></p>
         <p id="photoMessage" class="extract-msg"></p>
