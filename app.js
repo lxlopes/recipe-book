@@ -32,7 +32,7 @@ const WORKER_URL = 'https://recipe-proxy.luislopes.workers.dev';
 // CONSTANTS
 // ============================================================
 const CATEGORIES = {
-  breakfast: { en: 'Breakfast',    pt: 'Pequeno-almo\u00e7o' },
+  breakfast: { en: 'Breakfast',    pt: 'Pequeno-almoço' },
   main:      { en: 'Main Course',  pt: 'Prato Principal' },
   dessert:   { en: 'Dessert',      pt: 'Sobremesa' },
   snack:     { en: 'Snack',        pt: 'Snack' },
@@ -57,10 +57,20 @@ const LABELS = {
     igFallback: 'Could not auto-extract. Paste the caption below and click Parse:',
     extracted: 'Recipe extracted! Review and adjust before saving.',
     igExtracted: 'Instagram recipe extracted! Review and adjust before saving.',
+    photoExtracted: 'Recipe extracted from photo! Review before saving.',
+    photoNoRecipe: 'No recipe found in the image.',
     translating: 'Translating and saving...',
     networkError: 'Network error. Check your connection and try again.',
     limitReached: 'Daily extraction limit reached. Add the recipe manually.',
     extractError: 'Could not extract recipe. Try filling it in manually.',
+    mealPlan: 'Meal Plan',
+    allergenNames: {
+      milk: 'Milk', eggs: 'Eggs', fish: 'Fish', shellfish: 'Shellfish',
+      treenuts: 'Tree Nuts', peanuts: 'Peanuts', wheat: 'Wheat',
+      soy: 'Soy', sesame: 'Sesame', poultry: 'Poultry'
+    },
+    dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    mealLabel: 'Meal',
   },
   pt: {
     ingredients: 'Ingredientes',
@@ -68,20 +78,30 @@ const LABELS = {
     notes: 'Notas',
     allCat: 'Todos',
     min: 'min',
-    servings: 'por\u00e7\u00f5es',
+    servings: 'porções',
     source: 'Receita Web',
     igSource: 'Instagram',
     viewOriginal: 'Ver receita original',
     viewInstagram: 'Ver no Instagram',
     addedBy: 'Adicionado por',
-    noCaption: 'Esta publica\u00e7\u00e3o n\u00e3o tem receita na legenda. A receita precisa estar escrita na legenda do Instagram.',
-    igFallback: 'N\u00e3o foi poss\u00edvel extrair. Cole a legenda abaixo e clique em Analisar:',
-    extracted: 'Receita extra\u00edda! Reveja antes de guardar.',
-    igExtracted: 'Receita do Instagram extra\u00edda! Reveja antes de guardar.',
+    noCaption: 'Esta publicação não tem receita na legenda. A receita precisa estar escrita na legenda do Instagram.',
+    igFallback: 'Não foi possível extrair. Cole a legenda abaixo e clique em Analisar:',
+    extracted: 'Receita extraída! Reveja antes de guardar.',
+    igExtracted: 'Receita do Instagram extraída! Reveja antes de guardar.',
+    photoExtracted: 'Receita extraída da foto! Reveja antes de guardar.',
+    photoNoRecipe: 'Nenhuma receita encontrada na imagem.',
     translating: 'A traduzir e guardar...',
-    networkError: 'Erro de rede. Verifique a liga\u00e7\u00e3o.',
-    limitReached: 'Limite di\u00e1rio atingido. Adicione a receita manualmente.',
-    extractError: 'N\u00e3o foi poss\u00edvel extrair. Tente preencher manualmente.',
+    networkError: 'Erro de rede. Verifique a ligação.',
+    limitReached: 'Limite diário atingido. Adicione a receita manualmente.',
+    extractError: 'Não foi possível extrair. Tente preencher manualmente.',
+    mealPlan: 'Plano de Refeições',
+    allergenNames: {
+      milk: 'Leite', eggs: 'Ovos', fish: 'Peixe', shellfish: 'Marisco',
+      treenuts: 'Frutos Secos', peanuts: 'Amendoim', wheat: 'Trigo',
+      soy: 'Soja', sesame: 'Sésamo', poultry: 'Aves'
+    },
+    dayNames: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
+    mealLabel: 'Refeição',
   },
 };
 
@@ -99,6 +119,15 @@ let currentCategory = 'all';
 let currentLang = localStorage.getItem('recipeLang') || 'pt';
 let extractedBilingual = null; // full bilingual data from last URL extraction
 const brokenImages = new Set(); // recipe IDs whose image URLs fail to load
+
+// Wake lock state
+let wakeLock = null;
+
+// Meal plan state
+let currentWeekStart = getMonday(new Date());
+let mealPlanData = {};
+let slotPickerContext = null; // { dateStr }
+let mealPlanListener = null;
 
 // ============================================================
 // HELPERS
@@ -132,6 +161,91 @@ function lbl(key) {
   return LABELS[currentLang][key] || LABELS.en[key] || key;
 }
 
+function compressImage(file, maxWidth, quality) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function getSelectedAllergens() {
+  return Array.from(document.querySelectorAll('#allergenCheckboxes input:checked'))
+    .map(cb => cb.value);
+}
+
+function setAllergenCheckboxes(allergens) {
+  document.querySelectorAll('#allergenCheckboxes input').forEach(cb => {
+    cb.checked = (allergens || []).includes(cb.value);
+  });
+}
+
+// Meal plan date helpers
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun, 1=Mon...
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function dateToStr(date) {
+  // Use local date to avoid UTC offset issues
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getWeekDates(monday) {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+}
+
+// ============================================================
+// WAKE LOCK
+// ============================================================
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch {
+    // Permission denied or not supported — silently ignore
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+}
+
+// Re-acquire wake lock if screen comes back while detail view is active
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const detailView = document.getElementById('view-detail');
+    if (detailView.classList.contains('active') && !wakeLock) {
+      requestWakeLock();
+    }
+  }
+});
 
 // ============================================================
 // VIEW ROUTING
@@ -157,12 +271,17 @@ function applyLanguage() {
   document.getElementById('lbl-ingredients').textContent = lbl('ingredients');
   document.getElementById('lbl-steps').textContent = lbl('steps');
   document.getElementById('lbl-notes').textContent = lbl('notes');
+  document.getElementById('mealPlanTitle').textContent = lbl('mealPlan');
   renderCategoryFilters();
   renderGrid(getFilteredRecipes());
   // If detail view is open, re-render it
   if (document.getElementById('view-detail').classList.contains('active') && editingRecipeId === null) {
     const detailTitle = document.getElementById('d-title');
     if (detailTitle._recipeId) openDetail(detailTitle._recipeId);
+  }
+  // If meal plan view is open, re-render it
+  if (document.getElementById('view-mealplan').classList.contains('active')) {
+    renderMealPlan();
   }
 }
 
@@ -263,6 +382,10 @@ function loadRecipes() {
     });
     renderCategoryFilters();
     renderGrid(getFilteredRecipes());
+    // Re-render meal plan if visible
+    if (document.getElementById('view-mealplan').classList.contains('active')) {
+      renderMealPlan();
+    }
   });
 }
 
@@ -296,7 +419,7 @@ function renderGrid(recipes) {
         }
         <div class="recipe-card-body">
           <div class="recipe-card-title">${esc(rd.title)}</div>
-          <div class="recipe-card-meta">${esc(metaParts.join(' \u00b7 '))}</div>
+          <div class="recipe-card-meta">${esc(metaParts.join(' · '))}</div>
           <div class="tags-row">
             ${(r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}
           </div>
@@ -434,6 +557,7 @@ function showEditView(id) {
   editingRecipeId = id;
   extractedBilingual = null;
   resetForm();
+  releaseWakeLock();
   document.getElementById('addViewTitle').textContent = 'Edit Recipe';
   document.getElementById('saveBtn').textContent = 'Update Recipe';
 
@@ -450,6 +574,7 @@ function showEditView(id) {
   document.getElementById('f-tags').value = (r.tags || []).join(', ');
   document.getElementById('f-sourceUrl').value = r.sourceUrl || '';
   document.getElementById('f-sourceType').value = r.sourceType || 'website';
+  setAllergenCheckboxes(r.allergens || []);
   showView('add');
 }
 
@@ -462,6 +587,10 @@ function resetForm() {
   setExtractMsg('', '');
   document.getElementById('captionPasteBox')?.remove();
   extractedBilingual = null;
+  setAllergenCheckboxes([]);
+  document.getElementById('photoInput').value = '';
+  document.getElementById('photoMessage').textContent = '';
+  document.getElementById('photoMessage').className = 'extract-msg';
 }
 
 document.getElementById('backFromAddBtn').addEventListener('click', () => showView('list'));
@@ -532,6 +661,7 @@ async function extractFromUrl(url) {
     document.getElementById('f-notes').value = rd.notes || '';
     document.getElementById('f-sourceUrl').value = url;
     document.getElementById('f-sourceType').value = data.type === 'instagram' ? 'instagram' : 'website';
+    if (data.allergens) setAllergenCheckboxes(data.allergens);
 
     const msg = data.type === 'instagram' ? lbl('igExtracted') : lbl('extracted');
     setExtractMsg(msg, 'success');
@@ -584,6 +714,7 @@ function showCaptionPasteUI(url) {
       document.getElementById('f-notes').value = rd.notes || '';
       document.getElementById('f-sourceUrl').value = url;
       document.getElementById('f-sourceType').value = 'instagram';
+      if (data.allergens) setAllergenCheckboxes(data.allergens);
       box.remove();
       setExtractMsg(lbl('igExtracted'), 'success');
     } catch {
@@ -599,6 +730,62 @@ function setExtractMsg(text, type) {
   el.textContent = text;
   el.className = `extract-msg ${type}`;
 }
+
+// ── Photo / Screenshot extraction ────────────────────────────
+document.getElementById('photoInput').addEventListener('change', async e => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const photoMsgEl = document.getElementById('photoMessage');
+  const photoBtnEl = document.getElementById('photoBtn');
+  photoBtnEl.textContent = '⏳ Analyzing...';
+  photoMsgEl.textContent = '';
+  photoMsgEl.className = 'extract-msg';
+
+  try {
+    // Compress image before sending (max 1024px wide, jpeg 0.7 quality)
+    const compressed = await compressImage(file, 1024, 0.7);
+    const base64 = compressed.split(',')[1]; // strip data URL prefix
+    const mediaType = file.type || 'image/jpeg';
+
+    const res = await fetch(`${WORKER_URL}?action=extract-from-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mediaType }),
+    });
+
+    if (res.status === 422) {
+      photoMsgEl.textContent = lbl('photoNoRecipe');
+      photoMsgEl.className = 'extract-msg error';
+      return;
+    }
+    if (!res.ok) throw new Error('Worker error');
+
+    const data = await res.json();
+    extractedBilingual = data;
+
+    const rd = getRD(data);
+    document.getElementById('f-title').value = rd.title || '';
+    document.getElementById('f-image').value = data.image || '';
+    document.getElementById('f-category').value = data.category || 'other';
+    document.getElementById('f-servings').value = rd.servings || '';
+    document.getElementById('f-time').value = rd.readyInMinutes || '';
+    document.getElementById('f-ingredients').value = (rd.ingredients || []).join('\n');
+    document.getElementById('f-steps').value = (rd.steps || []).join('\n');
+    document.getElementById('f-notes').value = rd.notes || '';
+    document.getElementById('f-sourceType').value = 'website';
+    if (data.allergens) setAllergenCheckboxes(data.allergens);
+
+    photoMsgEl.textContent = lbl('photoExtracted');
+    photoMsgEl.className = 'extract-msg success';
+  } catch {
+    photoMsgEl.textContent = lbl('networkError');
+    photoMsgEl.className = 'extract-msg error';
+  } finally {
+    photoBtnEl.textContent = '📷 From Photo';
+    e.target.value = ''; // allow re-selecting same file
+  }
+});
 
 // ── Save recipe ───────────────────────────────────────────────
 document.getElementById('recipeForm').addEventListener('submit', async e => {
@@ -617,6 +804,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
   const tags        = document.getElementById('f-tags').value.split(',').map(s => s.trim()).filter(Boolean);
   const sourceUrl   = document.getElementById('f-sourceUrl').value.trim();
   const sourceType  = document.getElementById('f-sourceType').value || 'website';
+  const allergens   = getSelectedAllergens();
 
   try {
     if (editingRecipeId) {
@@ -628,6 +816,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
         category,
         image: image || null,
         tags: tags.length ? tags : null,
+        allergens: allergens.length ? allergens : null,
         sourceUrl: sourceUrl || null,
         sourceType,
       };
@@ -693,6 +882,7 @@ document.getElementById('recipeForm').addEventListener('submit', async e => {
         videoUrl: extractedBilingual?.videoUrl || null,
         category: bilingualData.category || category,
         tags: tags.length ? tags : null,
+        allergens: allergens.length ? allergens : null,
         sourceUrl: sourceUrl || null,
         sourceType,
         en: bilingualData.en || null,
@@ -720,11 +910,22 @@ function openDetail(id) {
 
   const video = document.getElementById('d-video');
   const img = document.getElementById('d-image');
-  if (r.videoUrl && r.sourceType === 'instagram') {
+
+  if (r.videoUrl) {
     video.src = r.videoUrl;
     video.classList.remove('hidden');
-    video.onerror = () => { video.classList.add('hidden'); }; // hide if URL expired
     img.style.display = 'none';
+    video.onerror = () => {
+      video.classList.add('hidden');
+      video.src = '';
+      if (r.image) {
+        img.src = r.image;
+        img.style.display = 'block';
+        img.onerror = () => { img.style.display = 'none'; };
+      } else {
+        img.style.display = 'none';
+      }
+    };
   } else {
     video.classList.add('hidden');
     video.src = '';
@@ -752,6 +953,19 @@ function openDetail(id) {
 
   document.getElementById('d-tags').innerHTML =
     (r.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+
+  // Allergens
+  const allergenNames = LABELS[currentLang].allergenNames;
+  const allergensEl = document.getElementById('d-allergens');
+  const recipeAllergens = r.allergens || [];
+  if (recipeAllergens.length) {
+    allergensEl.innerHTML = recipeAllergens
+      .map(a => `<span class="allergen-badge">${esc(allergenNames[a] || a)}</span>`)
+      .join('');
+    allergensEl.classList.remove('hidden');
+  } else {
+    allergensEl.classList.add('hidden');
+  }
 
   document.getElementById('d-ingredients').innerHTML =
     (rd.ingredients || []).map(i => `<li>${esc(i)}</li>`).join('');
@@ -781,10 +995,14 @@ function openDetail(id) {
   document.getElementById('deleteBtn').onclick = () => deleteRecipe(id);
   document.getElementById('retranslateBtn').onclick = () => retranslateRecipe(id);
 
+  requestWakeLock();
   showView('detail');
 }
 
-document.getElementById('backFromDetailBtn').addEventListener('click', () => showView('list'));
+document.getElementById('backFromDetailBtn').addEventListener('click', () => {
+  releaseWakeLock();
+  showView('list');
+});
 
 async function retranslateRecipe(id) {
   const r = allRecipes[id];
@@ -840,6 +1058,236 @@ async function deleteRecipe(id) {
     alert('Error deleting recipe. Please try again.');
   }
 }
+
+// ============================================================
+// MEAL PLAN VIEW
+// ============================================================
+function subscribeMealPlan() {
+  if (mealPlanListener) { mealPlanListener(); mealPlanListener = null; }
+  mealPlanListener = onValue(ref(db, 'mealPlan'), snapshot => {
+    mealPlanData = snapshot.val() || {};
+    renderMealPlan();
+  });
+}
+
+function renderMealPlan() {
+  const weekDates = getWeekDates(currentWeekStart);
+  const todayStr = dateToStr(new Date());
+  const dayLabels = LABELS[currentLang].dayNames;
+
+  // Update week label
+  const from = weekDates[0];
+  const to = weekDates[6];
+  const fmtD = d => `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`;
+  document.getElementById('weekLabel').textContent = `${fmtD(from)} – ${fmtD(to)}`;
+
+  const cells = [];
+
+  // Day headers
+  weekDates.forEach((d, i) => {
+    const ds = dateToStr(d);
+    const isToday = ds === todayStr;
+    cells.push(`<div class="mealplan-day-header${isToday ? ' today' : ''}">${dayLabels[i]}<br><span style="font-size:1em;font-weight:400">${d.getDate()}</span></div>`);
+  });
+
+  // Meal slots (one per day)
+  weekDates.forEach(d => {
+    const ds = dateToStr(d);
+    const recipeId = mealPlanData[ds];
+    const recipe = recipeId ? allRecipes[recipeId] : null;
+    const rd = recipe ? getRD(recipe) : null;
+
+    if (recipe && rd) {
+      const imgHtml = recipe.image
+        ? `<img src="${esc(recipe.image)}" alt="" onerror="this.style.display='none'">`
+        : '';
+      cells.push(`<div class="meal-slot filled" data-date="${ds}">${imgHtml}<span>${esc(rd.title || '')}</span></div>`);
+    } else {
+      cells.push(`<div class="meal-slot empty" data-date="${ds}">+</div>`);
+    }
+  });
+
+  document.getElementById('mealPlanGrid').innerHTML = cells.join('');
+}
+
+function openSlotPicker(dateStr) {
+  slotPickerContext = { dateStr };
+  const modal = document.getElementById('slotPickerModal');
+  const d = new Date(dateStr + 'T12:00');
+  const dayName = d.toLocaleDateString(currentLang === 'pt' ? 'pt-PT' : 'en-GB', {
+    weekday: 'long', day: 'numeric', month: 'short'
+  });
+  document.getElementById('slotPickerTitle').textContent = dayName;
+  document.getElementById('slotPickerSearch').value = '';
+  renderSlotPickerList('');
+  modal.classList.remove('hidden');
+}
+
+function renderSlotPickerList(query) {
+  const list = document.getElementById('slotPickerList');
+  let recipes = Object.values(allRecipes);
+  if (query) {
+    const q = query.toLowerCase();
+    recipes = recipes.filter(r => {
+      const rd = getRD(r);
+      return (rd.title || '').toLowerCase().includes(q);
+    });
+  }
+  recipes.sort((a, b) => {
+    const ta = getRD(a).title || '';
+    const tb = getRD(b).title || '';
+    return ta.localeCompare(tb);
+  });
+
+  list.innerHTML = recipes.map(r => {
+    const rd = getRD(r);
+    const cat = CATEGORIES[r.category || 'other'];
+    return `
+      <div class="slot-picker-item" data-id="${r.id}">
+        ${r.image
+          ? `<img class="slot-picker-item-img" src="${esc(r.image)}" alt="" onerror="this.style.display='none'">`
+          : `<div class="slot-picker-item-img"></div>`}
+        <div>
+          <div class="slot-picker-item-name">${esc(rd.title || '')}</div>
+          <div class="slot-picker-item-meta">${cat ? cat[currentLang] : ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function assignMealSlot(dateStr, recipeId) {
+  try {
+    await set(ref(db, `mealPlan/${dateStr}`), recipeId || null);
+    if (recipeId) {
+      await update(ref(db, `recipes/${recipeId}`), { lastPlanned: Date.now() });
+    }
+  } catch (err) {
+    console.error('Failed to update meal plan:', err);
+    alert('Error saving meal plan. Try again.');
+  }
+}
+
+// Meal plan navigation
+document.getElementById('mealPlanBtn').addEventListener('click', () => {
+  currentWeekStart = getMonday(new Date());
+  subscribeMealPlan();
+  showView('mealplan');
+});
+
+document.getElementById('backFromMealPlanBtn').addEventListener('click', () => {
+  if (mealPlanListener) { mealPlanListener(); mealPlanListener = null; }
+  showView('list');
+});
+
+document.getElementById('weekPrevBtn').addEventListener('click', () => {
+  currentWeekStart = new Date(currentWeekStart);
+  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+  renderMealPlan();
+});
+
+document.getElementById('weekNextBtn').addEventListener('click', () => {
+  currentWeekStart = new Date(currentWeekStart);
+  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  renderMealPlan();
+});
+
+// Click a meal slot to open picker
+document.getElementById('mealPlanGrid').addEventListener('click', e => {
+  const slot = e.target.closest('.meal-slot');
+  if (!slot) return;
+  openSlotPicker(slot.dataset.date);
+});
+
+// Slot picker interactions
+document.getElementById('slotPickerSearch').addEventListener('input', e => {
+  renderSlotPickerList(e.target.value.trim());
+});
+
+document.getElementById('slotPickerList').addEventListener('click', e => {
+  const item = e.target.closest('.slot-picker-item');
+  if (!item || !slotPickerContext) return;
+  assignMealSlot(slotPickerContext.dateStr, item.dataset.id);
+  document.getElementById('slotPickerModal').classList.add('hidden');
+});
+
+document.getElementById('slotPickerClear').addEventListener('click', () => {
+  if (!slotPickerContext) return;
+  assignMealSlot(slotPickerContext.dateStr, null);
+  document.getElementById('slotPickerModal').classList.add('hidden');
+});
+
+document.getElementById('slotPickerModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('slotPickerModal')) {
+    document.getElementById('slotPickerModal').classList.add('hidden');
+  }
+});
+
+document.getElementById('slotPickerClose').addEventListener('click', () => {
+  document.getElementById('slotPickerModal').classList.add('hidden');
+});
+
+// Randomize week — fill empty slots preferring recipes with oldest lastPlanned
+document.getElementById('randomizeWeekBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('randomizeWeekBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  const weekDates = getWeekDates(currentWeekStart);
+  const recipes = Object.values(allRecipes);
+  if (!recipes.length) { btn.disabled = false; btn.textContent = 'Randomize'; return; }
+
+  // Sort ascending by lastPlanned (null/undefined = never planned = treat as 0 = oldest)
+  const sorted = [...recipes].sort((a, b) => (a.lastPlanned || 0) - (b.lastPlanned || 0));
+
+  const updates = {};
+  const usedThisWeek = new Set();
+
+  // Collect already-assigned recipes this week so we don't duplicate
+  weekDates.forEach(d => {
+    const ds = dateToStr(d);
+    const existing = mealPlanData[ds];
+    if (existing) usedThisWeek.add(existing);
+  });
+
+  let sortedIdx = 0;
+
+  for (const d of weekDates) {
+    const ds = dateToStr(d);
+    if (mealPlanData[ds]) continue; // already filled — respect manual choices
+
+    // Find the next recipe not already used this week
+    let picked = null;
+    for (let attempt = 0; attempt < sorted.length; attempt++) {
+      const candidate = sorted[(sortedIdx + attempt) % sorted.length];
+      if (!usedThisWeek.has(candidate.id)) {
+        picked = candidate;
+        sortedIdx = (sortedIdx + attempt + 1) % sorted.length;
+        break;
+      }
+    }
+    // Fallback: if all recipes already used (fewer recipes than days), allow repeats
+    if (!picked) {
+      picked = sorted[sortedIdx % sorted.length];
+      sortedIdx = (sortedIdx + 1) % sorted.length;
+    }
+
+    usedThisWeek.add(picked.id);
+    updates[`mealPlan/${ds}`] = picked.id;
+    updates[`recipes/${picked.id}/lastPlanned`] = Date.now();
+  }
+
+  if (Object.keys(updates).length) {
+    try {
+      await update(ref(db, '/'), updates);
+    } catch (err) {
+      console.error('Randomize failed:', err);
+      alert('Error randomizing. Try again.');
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Randomize';
+});
 
 // ============================================================
 // INIT

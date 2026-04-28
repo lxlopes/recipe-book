@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Our Recipe Book</title>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -27,6 +27,7 @@
     <header class="app-header">
       <h1>Our Recipe Book</h1>
       <div class="header-actions">
+        <button id="mealPlanBtn" class="btn-lang">&#x1F4C5; Plan</button>
         <button id="syncBtn" class="btn-lang">Sync</button>
         <button id="langBtn" class="btn-lang">EN</button>
         <button id="signOutBtn" class="btn-ghost">Sign Out</button>
@@ -58,12 +59,19 @@
           <input type="url" id="urlInput" placeholder="Paste recipe URL or Instagram link...">
           <button id="extractBtn" class="btn-primary">Extract</button>
         </div>
+        <div class="url-input-row" style="margin-top:0.5rem;">
+          <label for="photoInput" id="photoBtn" class="btn-primary" style="cursor:pointer; text-align:center; display:flex; align-items:center; justify-content:center; gap:0.4rem; flex:1;">
+            &#x1F4F7; From Photo
+          </label>
+          <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
+        </div>
         <p id="extractMessage" class="extract-msg"></p>
+        <p id="photoMessage" class="extract-msg"></p>
       </div>
       <form id="recipeForm">
         <div class="form-group">
-          <label>Title *</label>
-          <input type="text" id="f-title" placeholder="Recipe name" required>
+          <label>Title</label>
+          <input type="text" id="f-title" placeholder="Recipe name">
         </div>
         <div class="form-group">
           <label>Image URL</label>
@@ -106,6 +114,21 @@
           <label>Tags <span class="hint">(comma separated)</span></label>
           <input type="text" id="f-tags" placeholder="pasta, italian, quick">
         </div>
+        <div class="form-group">
+          <label>Allergens <span class="hint">(check all that apply)</span></label>
+          <div id="allergenCheckboxes" class="allergen-grid">
+            <label class="allergen-item"><input type="checkbox" value="milk"> Milk</label>
+            <label class="allergen-item"><input type="checkbox" value="eggs"> Eggs</label>
+            <label class="allergen-item"><input type="checkbox" value="fish"> Fish</label>
+            <label class="allergen-item"><input type="checkbox" value="shellfish"> Shellfish</label>
+            <label class="allergen-item"><input type="checkbox" value="treenuts"> Tree Nuts</label>
+            <label class="allergen-item"><input type="checkbox" value="peanuts"> Peanuts</label>
+            <label class="allergen-item"><input type="checkbox" value="wheat"> Wheat</label>
+            <label class="allergen-item"><input type="checkbox" value="soy"> Soy</label>
+            <label class="allergen-item"><input type="checkbox" value="sesame"> Sesame</label>
+            <label class="allergen-item"><input type="checkbox" value="poultry"> Poultry</label>
+          </div>
+        </div>
         <input type="hidden" id="f-sourceUrl">
         <input type="hidden" id="f-sourceType" value="website">
         <button type="submit" id="saveBtn" class="btn-primary full-width">Save Recipe</button>
@@ -133,6 +156,7 @@
         <h2 id="d-title"></h2>
         <div id="d-meta" class="detail-meta"></div>
         <div id="d-tags" class="tags-row"></div>
+        <div id="d-allergens" class="allergens-row hidden"></div>
         <section>
           <h3 id="lbl-ingredients">Ingredients</h3>
           <ul id="d-ingredients"></ul>
@@ -151,6 +175,36 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=15"></script>
+  <!-- VIEW: Meal Plan -->
+  <div id="view-mealplan" class="view hidden">
+    <header class="app-header">
+      <button id="backFromMealPlanBtn" class="btn-ghost">&#8592; Back</button>
+      <h2 id="mealPlanTitle">Meal Plan</h2>
+      <div class="header-actions">
+        <button id="weekPrevBtn" class="btn-ghost">&#8592;</button>
+        <span id="weekLabel" style="font-size:0.82rem; font-weight:600; white-space:nowrap;"></span>
+        <button id="weekNextBtn" class="btn-ghost">&#8594;</button>
+        <button id="randomizeWeekBtn" class="btn-primary" style="font-size:0.82rem; padding:0.4rem 0.8rem;">Randomize</button>
+      </div>
+    </header>
+    <div class="mealplan-content">
+      <div id="mealPlanGrid" class="mealplan-grid"></div>
+    </div>
+
+    <!-- Slot picker modal -->
+    <div id="slotPickerModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="slotPickerTitle">Choose Recipe</h3>
+          <button id="slotPickerClose" class="btn-ghost">&#x2715;</button>
+        </div>
+        <input type="text" id="slotPickerSearch" placeholder="Search recipes...">
+        <div id="slotPickerList" class="slot-picker-list"></div>
+        <button id="slotPickerClear" class="btn-danger full-width" style="margin-top:0.75rem; flex-shrink:0;">Remove from day</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js?v=16"></script>
 </body>
 </html>
