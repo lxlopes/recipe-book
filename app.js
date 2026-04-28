@@ -7,15 +7,25 @@ import { getDatabase, ref, push, set, onValue, remove, update }
 // ============================================================
 // CONFIG
 // ============================================================
-const firebaseConfig = {
-  apiKey: "AIzaSyAf9D-jeNf6Gfy7fqVedLHKnd7IaAGzzck",
-  authDomain: "recipe-book-9968d.firebaseapp.com",
-  databaseURL: "https://recipe-book-9968d-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "recipe-book-9968d",
-  storageBucket: "recipe-book-9968d.firebasestorage.app",
-  messagingSenderId: "404542514103",
-  appId: "1:404542514103:web:f7c6d4b54f215d59ffbe32"
-};
+const firebaseConfig = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? {
+      apiKey: "AIzaSyDXgPTFb-UYTZk8wD_K8XuweqJkjQQq20c",
+      authDomain: "recipe-book-dev-53317.firebaseapp.com",
+      databaseURL: "https://recipe-book-dev-53317-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "recipe-book-dev-53317",
+      storageBucket: "recipe-book-dev-53317.firebasestorage.app",
+      messagingSenderId: "663602728519",
+      appId: "1:663602728519:web:2df476a0cc427002b32b62"
+    }
+  : {
+      apiKey: "AIzaSyAf9D-jeNf6Gfy7fqVedLHKnd7IaAGzzck",
+      authDomain: "recipe-book-9968d.firebaseapp.com",
+      databaseURL: "https://recipe-book-9968d-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "recipe-book-9968d",
+      storageBucket: "recipe-book-9968d.firebasestorage.app",
+      messagingSenderId: "404542514103",
+      appId: "1:404542514103:web:f7c6d4b54f215d59ffbe32"
+    };
 const WORKER_URL = 'https://recipe-proxy.luislopes.workers.dev';
 
 // ============================================================
